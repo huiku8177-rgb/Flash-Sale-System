@@ -2,6 +2,8 @@ package com.flashsale.common.domain;
 
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 /**
  * @author strive_qin
  * @version 1.0
@@ -14,6 +16,11 @@ public class Result<T> {
     private Integer code;
     private String message;
     private T data;
+    private LocalDateTime timestamp;
+
+    public static <T> Result<T> success() {
+        return success(null);
+    }
 
     public static <T> Result<T> success(T data){
 
@@ -21,15 +28,27 @@ public class Result<T> {
         result.setCode(ResultCode.SUCCESS.getCode());
         result.setMessage(ResultCode.SUCCESS.getMessage());
         result.setData(data);
+        result.setTimestamp(LocalDateTime.now());
 
         return result;
     }
 
-    public static Result error(ResultCode code){
+    public static Result<Void> error(ResultCode code){
 
-        Result result = new Result();
+        Result<Void> result = new Result<>();
         result.setCode(code.getCode());
         result.setMessage(code.getMessage());
+        result.setTimestamp(LocalDateTime.now());
+
+        return result;
+    }
+
+    public static Result<Void> error(ResultCode code, String message){
+
+        Result<Void> result = new Result<>();
+        result.setCode(code.getCode());
+        result.setMessage(message);
+        result.setTimestamp(LocalDateTime.now());
 
         return result;
     }
