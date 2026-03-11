@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: seckill-service
+  data:
+    redis:
+      host: 192.168.100.130
+      port: 6379
+      password: 123321
+  rabbitmq:
+    host: 192.168.100.130
+    port: 5672
+    username: guest
+    password: guest
+
+server:
+  port: 8081
