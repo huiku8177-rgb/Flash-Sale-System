@@ -11,7 +11,7 @@ import org.springframework.format.annotation.DateTimeFormat;
  */
 @Data
 public class User {
-    private Integer id;
+    private Long id;
     private String username;
     private String password;
     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")

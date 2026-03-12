@@ -33,13 +33,10 @@ public class Result<T> {
         return result;
     }
 
-    public static Result<Void> error(ResultCode code){
-
-        Result<Void> result = new Result<>();
+    public static <T> Result<T> error(ResultCode code) {
+        Result<T> result = new Result<>();
         result.setCode(code.getCode());
         result.setMessage(code.getMessage());
-        result.setTimestamp(LocalDateTime.now());
-
         return result;
     }
 
