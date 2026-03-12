@@ -21,6 +21,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/auth")
 @Slf4j
 public class UserController {
+    /**
+     * 认证业务入口：聚合登录/注册接口。
+     *
+     * 说明：Controller 只做参数接收与返回封装，核心逻辑下沉至 UserService。
+     */
     @Autowired
     private UserService userService;
 
@@ -31,6 +36,7 @@ public class UserController {
      */
     @PostMapping("/login")
     public Result<UserVO> login(@RequestBody UserDTO userDTO){
+        // 登录成功后返回 userId、username 与 JWT token
         return userService.login(userDTO);
     }
     /**
@@ -41,6 +47,7 @@ public class UserController {
     @PostMapping("/register")
     public Result register(@RequestBody UserDTO userDTO){
         log.info("用户注册: {}", userDTO.getUsername());
+        // 注册流程：用户名唯一性校验 + 密码加密后入库（在 service 完成）
         userService.register(userDTO);
         return Result.success();
     }

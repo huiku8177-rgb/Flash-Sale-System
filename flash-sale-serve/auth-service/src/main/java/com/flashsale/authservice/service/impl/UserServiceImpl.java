@@ -25,9 +25,13 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
+    /** 用户数据访问层：负责用户查询/新增。 */
     private final UserMapper userMapper;
+    /** JWT 工具：负责 token 签发。 */
     private final JwtTool jwtTool;
+    /** JWT 配置：读取 tokenTTL 等配置项。 */
     private final JwtProperties jwtProperties;
+    /** 密码编码器：BCrypt 加密与校验。 */
     private final PasswordEncoder passwordEncoder;
 
 
@@ -35,17 +39,21 @@ public class UserServiceImpl implements UserService {
     public Result<UserVO> login(UserDTO userDTO) {
         log.info("用户登录: {}", userDTO.getUsername());
 
+        // 1) 按用户名查询账户
         User user = userMapper.findByUsername(userDTO.getUsername());
         if (user == null) {
             return Result.error(ResultCode.UNAUTHORIZED);
         }
 
+        // 2) 使用 BCrypt 校验密码
         if (!passwordEncoder.matches(userDTO.getPassword(), user.getPassword())) {
             return Result.error(ResultCode.UNAUTHORIZED);
         }
 
+        // 3) 签发 JWT token
         String token = jwtTool.createToken(user.getId(), jwtProperties.getTokenTTL());
 
+        // 4) 组装返回对象
         UserVO userVO = new UserVO();
         userVO.setUserId(user.getId().intValue());
         userVO.setUsername(user.getUsername());
@@ -58,11 +66,13 @@ public class UserServiceImpl implements UserService {
     public void register(UserDTO userDTO) {
         log.info("用户注册: {}", userDTO.getUsername());
 
+        // 1) 用户名唯一性校验
         User oldUser = userMapper.findByUsername(userDTO.getUsername());
         if (oldUser != null) {
             throw new IllegalArgumentException("用户名已存在");
         }
 
+        // 2) 密码加密后入库
         User user = new User();
         user.setUsername(userDTO.getUsername());
         user.setPassword(passwordEncoder.encode(userDTO.getPassword()));
