@@ -10,6 +10,11 @@ spring:
       host: 192.168.100.130
       port: 6379
       password: 123321
+  cloud:
+    nacos:
+      server-addr: 192.168.100.130:8848
+      discovery:
+        namespace: cac2e129-5c78-402a-bdd1-b9dbb0892486
 
 server:
   port: 8082

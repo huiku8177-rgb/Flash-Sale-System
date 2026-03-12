@@ -6,12 +6,11 @@ import com.flashsale.authservice.domain.po.User;
 import com.flashsale.authservice.domain.vo.UserVO;
 import com.flashsale.authservice.mapper.UserMapper;
 import com.flashsale.authservice.service.UserService;
-import com.flashsale.authservice.util.JwtTool;
 import com.flashsale.common.domain.Result;
 import com.flashsale.common.domain.ResultCode;
+import com.flashsale.common.util.JwtTool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 

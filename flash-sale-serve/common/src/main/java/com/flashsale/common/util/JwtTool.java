@@ -1,4 +1,4 @@
-package com.flashsale.authservice.util;
+package com.flashsale.common.util;
 
 import cn.hutool.core.exceptions.ValidateException;
 import cn.hutool.jwt.JWT;

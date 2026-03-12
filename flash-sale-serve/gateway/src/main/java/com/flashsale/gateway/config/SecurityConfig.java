@@ -1,4 +1,6 @@
-package com.flashsale.authservice.config;
+
+package com.flashsale.gateway.config;
+
 
 import com.flashsale.common.util.JwtTool;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -23,7 +25,7 @@ public class SecurityConfig {
         return new JwtTool(keyPair);
     }
     @Bean
-    public KeyPair keyPair( JwtProperties properties){
+    public KeyPair keyPair(JwtProperties properties){
         // 获取秘钥工厂
         KeyStoreKeyFactory keyStoreKeyFactory =
                 new KeyStoreKeyFactory(

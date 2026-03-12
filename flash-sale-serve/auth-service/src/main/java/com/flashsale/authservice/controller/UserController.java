@@ -24,10 +24,20 @@ public class UserController {
     @Autowired
     private UserService userService;
 
+    /**
+     * 用户登录
+     * @param userDTO
+     * @return
+     */
     @PostMapping("/login")
     public Result<UserVO> login(@RequestBody UserDTO userDTO){
         return userService.login(userDTO);
     }
+    /**
+     * 用户注册
+     * @param userDTO
+     * @return
+     */
     @PostMapping("/register")
     public Result register(@RequestBody UserDTO userDTO){
         log.info("用户注册: {}", userDTO.getUsername());
