@@ -14,6 +14,7 @@ import java.util.Date;
 
 @Component
 public class JwtTool {
+    /** RS256 签名器，项目内统一用于 token 签发与验签。 */
     private final JWTSigner jwtSigner;
 
     public JwtTool(KeyPair keyPair) {
@@ -27,7 +28,7 @@ public class JwtTool {
      * @return access-token
      */
     public String createToken(Long userId, Duration ttl) {
-        // 1.生成jws
+        // 1. 生成并签名 JWT（payload: user）
         System.out.println("jwtSigner:"+jwtSigner);
         return JWT.create()
                 .setPayload("user", userId)
@@ -43,36 +44,36 @@ public class JwtTool {
      * @return 解析刷新token得到的用户信息
      */
     public Long parseToken(String token) {
-        // 1.校验token是否为空
+        // 1. 校验 token 是否为空
         if (token == null) {
             throw new UnauthorizedException("未登录");
         }
-        // 2.校验并解析jwt
+        // 2. 解析 token，并绑定统一签名器
         JWT jwt;
         try {
             jwt = JWT.of(token).setSigner(jwtSigner);
         } catch (Exception e) {
             throw new UnauthorizedException("无效的token", e);
         }
-        // 2.校验jwt是否有效
+        // 3. 校验签名有效性
         if (!jwt.verify()) {
             // 验证失败
             throw new UnauthorizedException("无效的token");
         }
-        // 3.校验是否过期
+        // 4. 校验过期时间
         try {
             JWTValidator.of(jwt).validateDate();
         } catch (ValidateException e) {
             throw new UnauthorizedException("token已经过期");
         }
-        // 4.数据格式校验
+        // 5. 校验核心载荷字段
         Object userPayload = jwt.getPayload("user");
         if (userPayload == null) {
             // 数据为空
             throw new UnauthorizedException("无效的token");
         }
 
-        // 5.数据解析
+        // 6. 解析 userId
         try {
            return Long.valueOf(userPayload.toString());
         } catch (RuntimeException e) {

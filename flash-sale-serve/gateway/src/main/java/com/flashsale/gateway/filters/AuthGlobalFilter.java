@@ -29,7 +29,9 @@ import java.util.List;
 @Component
 public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
+    /** 鉴权白名单配置，例如 /auth/login、/auth/register。 */
     private final AuthProperties authProperties;
+    /** JWT 解析工具，用于统一验证 token 并提取 userId。 */
     private final JwtTool jwtTool;
     private final AntPathMatcher antPathMatcher = new AntPathMatcher();
 
@@ -74,6 +76,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         }
 
         // 4. 传递用户信息给下游服务
+        // 下游服务只需读取 X-User-Id，无需重复解析 JWT
         ServerWebExchange mutatedExchange = exchange.mutate()
                 .request(builder -> builder.header("X-User-Id", userId.toString()))
                 .build();
@@ -82,6 +85,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private boolean isExclude(String path) {
+        // 命中任意白名单规则即放行
         for (String pathPattern : authProperties.getExcludePaths()) {
             if (antPathMatcher.match(pathPattern, path)) {
                 return true;
