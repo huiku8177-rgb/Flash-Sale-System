@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.flashsale.seckillservice.mapper.SeckillMapper">
+
+    <resultMap id="SeckillResultVOResultMap" type="com.flashsale.seckillservice.domain.vo.SeckillResultVO">
+        <result property="success" column="success"/>
+        <result property="message" column="message"/>
+        <result property="productId" column="product_id"/>
+        <result property="orderId" column="order_id"/>
+    </resultMap>
+
+    <select id="buildSeckillResult" resultMap="SeckillResultVOResultMap">
+        SELECT
+            TRUE AS success,
+            'seckill request accepted' AS message,
+            #{requestDTO.productId} AS product_id,
+            NULL AS order_id
+    </select>
+
+</mapper>

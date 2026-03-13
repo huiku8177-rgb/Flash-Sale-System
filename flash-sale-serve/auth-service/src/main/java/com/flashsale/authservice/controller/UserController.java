@@ -51,5 +51,23 @@ public class UserController {
         userService.register(userDTO);
         return Result.success();
     }
+    /**
+     * 用户登出
+     * @return
+     */
+    //TODO 用户登出
+    @PostMapping("/logout")
+    public Result logout(){
+        return Result.success();
+    }
+    /**
+     * 获取当前用户信息
+     * @return
+     */
+    //TODO 获取当前用户信息
+    @PostMapping("/me")
+    public Result<UserVO> me(){
+        return Result.success();
+    }
 
 }

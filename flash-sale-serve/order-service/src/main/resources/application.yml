@@ -18,3 +18,9 @@ spring:
 
 server:
   port: 8082
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.flashsale.orderservice.domain.po,com.flashsale.orderservice.domain.vo
+  configuration:
+    map-underscore-to-camel-case: true

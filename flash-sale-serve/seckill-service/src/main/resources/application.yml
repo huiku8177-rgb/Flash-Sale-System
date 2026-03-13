@@ -23,3 +23,9 @@ spring:
 
 server:
   port: 8081
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.flashsale.seckillservice.domain.po,com.flashsale.seckillservice.domain.vo,com.flashsale.seckillservice.domain.dto
+  configuration:
+    map-underscore-to-camel-case: true
