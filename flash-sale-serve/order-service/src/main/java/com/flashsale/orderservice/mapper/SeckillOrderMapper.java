@@ -21,4 +21,6 @@ public interface SeckillOrderMapper {
     SeckillOrderVO getOrderDetail(@Param("id") Long id);
 
     void insert(SeckillOrderPO order);
+
+    SeckillOrderPO getByUserIdAndProductId(@Param("userId") Long userId, @Param("productId") Long productId);
 }
