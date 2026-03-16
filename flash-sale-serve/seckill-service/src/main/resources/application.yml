@@ -20,6 +20,10 @@ spring:
       server-addr: 192.168.100.130:8848
       discovery:
         namespace: cac2e129-5c78-402a-bdd1-b9dbb0892486
+        # 确保 Nacos 客户端完全初始化后再注册
+        register-enabled: true
+      config:
+        enabled: false
 
 server:
   port: 8081
@@ -29,3 +33,6 @@ mybatis:
   type-aliases-package: com.flashsale.seckillservice.domain.po,com.flashsale.seckillservice.domain.vo,com.flashsale.seckillservice.domain.dto
   configuration:
     map-underscore-to-camel-case: true
+seckill:
+  preload:
+   enabled: false

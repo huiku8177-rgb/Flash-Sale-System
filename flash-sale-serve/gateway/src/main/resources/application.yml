@@ -6,6 +6,10 @@ spring:
       server-addr: 192.168.100.130:8848
       discovery:
         namespace: cac2e129-5c78-402a-bdd1-b9dbb0892486
+        # 确保 Nacos 客户端完全初始化后再注册
+        register-enabled: true
+      config:
+        enabled: false
     gateway:
       routes:
         - id: auth-service

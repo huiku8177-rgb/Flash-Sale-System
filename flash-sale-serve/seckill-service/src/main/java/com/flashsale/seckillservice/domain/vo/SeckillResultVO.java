@@ -7,6 +7,7 @@ package com.flashsale.seckillservice.domain.vo;
  * @date 2026/3/13 16:03
  */
 
+import lombok.Builder;
 import lombok.Data;
 
 /**

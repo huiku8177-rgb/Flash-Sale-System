@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.flashsale.orderservice.mapper.ProductMapper">
+
+
+    <update id="decreaseStock" parameterType="java.lang.Long">
+        UPDATE product
+        SET stock = stock - 1
+        WHERE id = #{productId}
+          AND stock > 0
+    </update>
+</mapper>

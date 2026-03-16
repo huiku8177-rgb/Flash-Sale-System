@@ -18,4 +18,8 @@ public class SeckillRequestDTO {
      * 商品ID
      */
     private Long productId;
+    /**
+     * 用户ID
+     */
+    private Long userId;
 }

@@ -21,6 +21,10 @@
         status,
         create_time
     </sql>
+    <insert useGeneratedKeys="true" keyProperty="id" id="insert" parameterType="com.flashsale.orderservice.domain.po.SeckillOrderPO">
+        INSERT INTO seckill_order (user_id, product_id, seckill_price, status)
+        VALUES (#{userId}, #{productId}, #{seckillPrice}, #{status})
+    </insert>
 
     <select id="listOrders" resultMap="SeckillOrderVOResultMap">
         SELECT

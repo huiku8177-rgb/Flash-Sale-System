@@ -2,6 +2,7 @@ package com.flashsale.orderservice.service;
 
 import com.flashsale.common.domain.Result;
 import com.flashsale.orderservice.domain.vo.SeckillOrderVO;
+import com.flashsale.orderservice.mq.message.SeckillMessage;
 
 import java.util.List;
 
@@ -16,4 +17,6 @@ public interface SeckillOrderService {
     Result<List<SeckillOrderVO>> listOrders();
 
     Result<SeckillOrderVO> getOrderDetail(Long id);
+
+    void createSeckillOrder(SeckillMessage message);
 }

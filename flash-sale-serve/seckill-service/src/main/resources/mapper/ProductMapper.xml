@@ -48,4 +48,17 @@
         WHERE id = #{id}
     </select>
 
+
+    <select id="listAll" resultType="com.flashsale.seckillservice.domain.po.ProductPO">
+        SELECT id, stock
+        FROM product
+        WHERE status = 1
+    </select>
+    <select id="getById" resultType="com.flashsale.seckillservice.domain.po.ProductPO"
+            parameterType="java.lang.Long">
+        select *
+        from product
+        where id = #{id}
+    </select>
+
 </mapper>

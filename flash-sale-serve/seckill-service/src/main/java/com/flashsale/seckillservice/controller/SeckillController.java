@@ -3,13 +3,11 @@ package com.flashsale.seckillservice.controller;
 import com.flashsale.common.domain.Result;
 import com.flashsale.seckillservice.domain.dto.SeckillRequestDTO;
 import com.flashsale.seckillservice.domain.vo.SeckillResultVO;
+import com.flashsale.seckillservice.domain.vo.SeckillStatusVO;
 import com.flashsale.seckillservice.service.SeckillService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * @author strive_qin
@@ -17,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
  * @description SeckillController
  * @date 2026/3/13 14:51
  */
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/seckill")
@@ -24,13 +23,34 @@ public class SeckillController {
 
     private final SeckillService seckillService;
 
+
+    /**
+     * 发起秒杀
+     *
+     * @param productId 商品ID
+     * @return 秒杀结果
+     */
     @PostMapping("/{productId}")
-    public Result<SeckillResultVO> seckill(@PathVariable Long productId,
-                                           @RequestBody(required = false) SeckillRequestDTO requestDTO) {
-        if (requestDTO == null) {
-            requestDTO = new SeckillRequestDTO();
-        }
+    public Result<SeckillResultVO> seckill(@PathVariable("productId") Long productId,
+                                           @RequestHeader("X-User-Id") Long userId) {
+        log.info("用户 {} 秒杀商品 {}", userId, productId);
+        SeckillRequestDTO requestDTO = new SeckillRequestDTO();
         requestDTO.setProductId(productId);
+        requestDTO.setUserId(userId);
         return seckillService.seckill(requestDTO);
+    }
+
+    /**
+     * 获取秒杀结果
+     *
+     * @param productId 商品ID
+     * @return 秒杀结果
+     */
+    @GetMapping("/result/{productId}")
+    public Result<SeckillStatusVO> getSeckillResult(
+            @PathVariable("productId") Long productId,
+            @RequestHeader("X-User-Id") Long userId) {
+
+        return seckillService.getSeckillResult(userId, productId);
     }
 }

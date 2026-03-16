@@ -17,4 +17,5 @@ public interface ProductService {
     Result<List<ProductVO>> listProducts(ProductQueryDTO queryDTO);
 
     Result<ProductVO> getProductDetail(Long id);
+    void loadStockToRedis();
 }

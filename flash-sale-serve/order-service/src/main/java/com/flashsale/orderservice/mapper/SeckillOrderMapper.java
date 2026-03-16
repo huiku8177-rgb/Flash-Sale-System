@@ -1,5 +1,6 @@
 package com.flashsale.orderservice.mapper;
 
+import com.flashsale.orderservice.domain.po.SeckillOrderPO;
 import com.flashsale.orderservice.domain.vo.SeckillOrderVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -18,4 +19,6 @@ public interface SeckillOrderMapper {
     List<SeckillOrderVO> listOrders();
 
     SeckillOrderVO getOrderDetail(@Param("id") Long id);
+
+    void insert(SeckillOrderPO order);
 }
