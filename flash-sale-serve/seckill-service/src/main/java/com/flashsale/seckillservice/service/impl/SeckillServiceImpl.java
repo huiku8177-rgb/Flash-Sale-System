@@ -34,7 +34,9 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class SeckillServiceImpl implements SeckillService {
 
+    /** 活动结束后额外保留结果缓存的缓冲时长（秒）。 */
     private static final long RESULT_BUFFER_SECONDS = 600L;
+    /** 结果缓存兜底 TTL（秒）。 */
     private static final long DEFAULT_RESULT_TTL_SECONDS = 3600L;
 
     private final ProductMapper productMapper;
@@ -43,6 +45,9 @@ public class SeckillServiceImpl implements SeckillService {
     private final DefaultRedisScript<Long> seckillRollbackScript;
     private final SeckillProducer seckillProducer;
 
+    /**
+     * 秒杀入口：完成参数/活动校验、Lua 原子扣减、写入 PROCESSING 状态并异步投递 MQ。
+     */
     @Override
     public Result<SeckillResultVO> seckill(SeckillRequestDTO requestDTO) {
         Long productId = requestDTO.getProductId();

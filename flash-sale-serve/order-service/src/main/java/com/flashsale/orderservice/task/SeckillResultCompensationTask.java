@@ -27,6 +27,11 @@ public class SeckillResultCompensationTask {
     private final StringRedisTemplate stringRedisTemplate;
     private final SeckillOrderMapper seckillOrderMapper;
 
+    /**
+     * 定时扫描接近过期的 PROCESSING 状态：
+     * 1) DB已有订单 -> 修正为 SUCCESS；
+     * 2) DB无订单 -> 回滚Redis用户标记/库存并置 FAIL。
+     */
     @Scheduled(fixedDelay = 30000)
     public void compensateTimeoutProcessingResult() {
         ScanOptions options = ScanOptions.scanOptions().match(RedisKeys.PREFIX_SECKILL_RESULT + "*").count(200).build();

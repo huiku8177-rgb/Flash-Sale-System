@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class SeckillOrderServiceImpl implements SeckillOrderService {
 
+    /** 结果缓存兜底 TTL（秒）：当消息中未携带过期时间时使用。 */
     private static final long DEFAULT_RESULT_TTL_SECONDS = 3600L;
 
     private final SeckillOrderMapper seckillOrderMapper;
