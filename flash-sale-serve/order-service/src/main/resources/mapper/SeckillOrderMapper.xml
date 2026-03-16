@@ -26,6 +26,14 @@
         VALUES (#{userId}, #{productId}, #{seckillPrice}, #{status})
     </insert>
 
+    <select id="getByUserIdAndProductId" resultType="com.flashsale.orderservice.domain.po.SeckillOrderPO">
+        SELECT id, user_id, product_id, seckill_price, status, create_time
+        FROM seckill_order
+        WHERE user_id = #{userId}
+          AND product_id = #{productId}
+        LIMIT 1
+    </select>
+
     <select id="listOrders" resultMap="SeckillOrderVOResultMap">
         SELECT
         <include refid="BaseSeckillOrderColumns"/>

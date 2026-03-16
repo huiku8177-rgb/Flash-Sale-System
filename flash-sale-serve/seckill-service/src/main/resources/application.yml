@@ -15,6 +15,10 @@ spring:
     port: 5672
     username: guest
     password: guest
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
   cloud:
     nacos:
       server-addr: 192.168.100.130:8848

@@ -1,6 +1,7 @@
 package com.flashsale.seckillservice.service.impl;
 
 import com.flashsale.common.domain.Result;
+import com.flashsale.common.redis.RedisKeys;
 import com.flashsale.seckillservice.domain.dto.SeckillRequestDTO;
 import com.flashsale.seckillservice.domain.po.ProductPO;
 import com.flashsale.seckillservice.domain.vo.SeckillResultVO;
@@ -8,15 +9,19 @@ import com.flashsale.seckillservice.domain.vo.SeckillStatusVO;
 import com.flashsale.seckillservice.mapper.ProductMapper;
 import com.flashsale.seckillservice.mq.SeckillProducer;
 import com.flashsale.seckillservice.mq.message.SeckillMessage;
-import com.flashsale.common.redis.RedisKeys;
 import com.flashsale.seckillservice.service.SeckillService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Arrays;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author strive_qin
@@ -26,26 +31,34 @@ import java.util.Arrays;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SeckillServiceImpl implements SeckillService {
+
+    /** 活动结束后额外保留结果缓存的缓冲时长（秒）。 */
+    private static final long RESULT_BUFFER_SECONDS = 600L;
+    /** 结果缓存兜底 TTL（秒）。 */
+    private static final long DEFAULT_RESULT_TTL_SECONDS = 3600L;
 
     private final ProductMapper productMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final DefaultRedisScript<Long> seckillScript;
+    private final DefaultRedisScript<Long> seckillRollbackScript;
     private final SeckillProducer seckillProducer;
 
+    /**
+     * 秒杀入口：完成参数/活动校验、Lua 原子扣减、写入 PROCESSING 状态并异步投递 MQ。
+     */
     @Override
     public Result<SeckillResultVO> seckill(SeckillRequestDTO requestDTO) {
         Long productId = requestDTO.getProductId();
         Long userId = requestDTO.getUserId();
         SeckillResultVO result = new SeckillResultVO();
         result.setProductId(productId);
-        // 1. 参数校验
         if (productId == null || userId == null) {
             result.setSuccess(false);
             result.setMessage("请求参数错误");
             return Result.success(result);
         }
-        // 2. 查询商品
         ProductPO product = productMapper.getById(productId);
         if (product == null) {
             result.setSuccess(false);
@@ -53,14 +66,12 @@ public class SeckillServiceImpl implements SeckillService {
             return Result.success(result);
         }
 
-        // 3. 商品状态校验
         if (product.getStatus() == null || product.getStatus() != 1) {
             result.setSuccess(false);
             result.setMessage("商品已下架");
             return Result.success(result);
         }
 
-        // 4. 秒杀时间校验
         LocalDateTime now = LocalDateTime.now();
         if (product.getStartTime() != null && now.isBefore(product.getStartTime())) {
             result.setSuccess(false);
@@ -73,7 +84,7 @@ public class SeckillServiceImpl implements SeckillService {
             result.setMessage("秒杀已结束");
             return Result.success(result);
         }
-        // 5. 执行 Lua 脚本：校验库存 + 防重复秒杀 + 扣库存
+
         String stockKey = RedisKeys.seckillStock(productId);
         String userKey = RedisKeys.seckillUser(productId);
 
@@ -100,14 +111,34 @@ public class SeckillServiceImpl implements SeckillService {
             return Result.success(result);
         }
 
-        // 6. 发送 MQ，异步创建订单
-        SeckillMessage sm=new SeckillMessage();
+        long ttlSeconds = calculateResultTtlSeconds(product.getEndTime(), now);
+        String resultKey = RedisKeys.seckillResult(userId, productId);
+        stringRedisTemplate.opsForValue().set(resultKey, "PROCESSING", ttlSeconds, TimeUnit.SECONDS);
+        stringRedisTemplate.expire(userKey, ttlSeconds, TimeUnit.SECONDS);
+
+        SeckillMessage sm = new SeckillMessage();
+        sm.setMessageId(UUID.randomUUID().toString());
         sm.setUserId(userId);
         sm.setProductId(productId);
         sm.setSeckillPrice(product.getSeckillPrice());
         sm.setCreateTime(now);
-        seckillProducer.sendSeckillMessage(sm);
-        // 7. 立即返回结果
+        sm.setExpireAt(now.plusSeconds(ttlSeconds));
+
+        try {
+            seckillProducer.sendSeckillMessage(sm);
+        } catch (Exception e) {
+            stringRedisTemplate.execute(
+                    seckillRollbackScript,
+                    Arrays.asList(stockKey, userKey),
+                    String.valueOf(userId)
+            );
+            stringRedisTemplate.opsForValue().set(resultKey, "FAIL", DEFAULT_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
+            log.error("发送秒杀MQ失败，已回滚Redis库存和用户标记，messageId={}", sm.getMessageId(), e);
+            result.setSuccess(false);
+            result.setMessage("系统繁忙，请稍后重试");
+            return Result.success(result);
+        }
+
         result.setSuccess(true);
         result.setMessage("秒杀成功，订单处理中");
         return Result.success(result);
@@ -116,6 +147,7 @@ public class SeckillServiceImpl implements SeckillService {
 
     /**
      * 获取秒杀结果
+     *
      * @param userId
      * @param productId
      * @return
@@ -130,7 +162,6 @@ public class SeckillServiceImpl implements SeckillService {
             return Result.success(result);
         }
 
-        // 1. 先查是否已经生成订单
         String orderKey = RedisKeys.seckillOrder(userId, productId);
         String orderIdStr = stringRedisTemplate.opsForValue().get(orderKey);
 
@@ -141,20 +172,45 @@ public class SeckillServiceImpl implements SeckillService {
             return Result.success(result);
         }
 
-        // 2. 再查用户是否已经抢购过（说明请求已进入异步流程，订单可能还在创建中）
+        String resultKey = RedisKeys.seckillResult(userId, productId);
+        String status = stringRedisTemplate.opsForValue().get(resultKey);
+        if ("PROCESSING".equals(status)) {
+            result.setStatus(0);
+            result.setMessage("排队中");
+            return Result.success(result);
+        }
+
+        if ("FAIL".equals(status)) {
+            result.setStatus(-1);
+            result.setMessage("秒杀失败");
+            return Result.success(result);
+        }
+
         String userKey = RedisKeys.seckillUser(productId);
         Boolean exists = stringRedisTemplate.opsForSet().isMember(userKey, String.valueOf(userId));
-
         if (Boolean.TRUE.equals(exists)) {
             result.setStatus(0);
             result.setMessage("排队中");
             return Result.success(result);
         }
 
-        // 3. 都没有，说明秒杀失败
         result.setStatus(-1);
         result.setMessage("秒杀失败");
         return Result.success(result);
 
+    }
+
+    /**
+     * 计算秒杀结果相关 key 的 TTL。
+     * 规则：max(活动结束+缓冲 - 当前时间, 默认TTL)
+     */
+    private long calculateResultTtlSeconds(LocalDateTime endTime, LocalDateTime now) {
+        if (endTime == null) {
+            return DEFAULT_RESULT_TTL_SECONDS;
+        }
+        LocalDateTime expireTime = endTime.plusSeconds(RESULT_BUFFER_SECONDS);
+        long ttl = Duration.between(now.atZone(ZoneId.systemDefault()).toInstant(),
+                expireTime.atZone(ZoneId.systemDefault()).toInstant()).getSeconds();
+        return Math.max(ttl, DEFAULT_RESULT_TTL_SECONDS);
     }
 }
