@@ -29,6 +29,5 @@ public class SeckillMessage implements Serializable {
     /** 请求入队时间。 */
     private LocalDateTime createTime;
 
-    /** 建议过期时间，用于结果缓存TTL计算。 */
     private LocalDateTime expireAt;
 }

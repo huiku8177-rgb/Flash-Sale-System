@@ -93,9 +93,6 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
         }
     }
 
-    /**
-     * 死信补偿：订单最终失败时，回滚 Redis 用户标记与库存，并将结果改为 FAIL。
-     */
     @Override
     public void handleSeckillFailure(SeckillMessage message) {
         Long userId = message.getUserId();
@@ -121,12 +118,6 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
                 message.getMessageId(), userId, productId);
     }
 
-    /**
-     * 统一解析缓存 TTL。
-     *
-     * @param expireAt 消息建议过期时间
-     * @return 秒级 TTL，至少为默认值
-     */
     private long resolveTtlSeconds(LocalDateTime expireAt) {
         if (expireAt == null) {
             return DEFAULT_RESULT_TTL_SECONDS;

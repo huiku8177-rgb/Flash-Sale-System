@@ -200,10 +200,6 @@ public class SeckillServiceImpl implements SeckillService {
 
     }
 
-    /**
-     * 计算秒杀结果相关 key 的 TTL。
-     * 规则：max(活动结束+缓冲 - 当前时间, 默认TTL)
-     */
     private long calculateResultTtlSeconds(LocalDateTime endTime, LocalDateTime now) {
         if (endTime == null) {
             return DEFAULT_RESULT_TTL_SECONDS;
