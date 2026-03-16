@@ -13,8 +13,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author strive_qin
@@ -27,8 +32,9 @@ import java.util.List;
 @Slf4j
 public class SeckillOrderServiceImpl implements SeckillOrderService {
 
+    private static final long DEFAULT_RESULT_TTL_SECONDS = 3600L;
+
     private final SeckillOrderMapper seckillOrderMapper;
-    private final SeckillOrderMapper orderMapper;
     private final ProductMapper productMapper;
     private final StringRedisTemplate stringRedisTemplate;
 
@@ -48,37 +54,75 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
      * @param message 秒杀消息
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void createSeckillOrder(SeckillMessage message) {
         Long productId = message.getProductId();
         Long userId = message.getUserId();
+        long ttlSeconds = resolveTtlSeconds(message.getExpireAt());
+        String orderKey = RedisKeys.seckillOrder(userId, productId);
+        String resultKey = RedisKeys.seckillResult(userId, productId);
+
         try {
+            int updated = productMapper.decreaseStock(productId);
+            if (updated <= 0) {
+                throw new RuntimeException("扣减数据库库存失败");
+            }
+
             SeckillOrderPO order = new SeckillOrderPO();
             order.setUserId(userId);
             order.setProductId(productId);
             order.setSeckillPrice(message.getSeckillPrice());
             order.setStatus(0);
+            seckillOrderMapper.insert(order);
 
-            orderMapper.insert(order);
-
-            int updated = productMapper.decreaseStock(productId);
-            if (updated <= 0) {
-                throw new RuntimeException("扣减数据库库存失败");
-            }
-            // 写入秒杀结果缓存
-            stringRedisTemplate.opsForValue().set(
-                    RedisKeys.seckillOrder(message.getUserId(), message.getProductId()),
-                    String.valueOf(order.getId())
-            );
-            String orderKey = RedisKeys.seckillOrder(message.getUserId(), message.getProductId());
-            log.info("写入秒杀结果缓存 key={}, value={}", orderKey, order.getId());
-            log.info("创建秒杀订单成功 userId={}, productId={}, orderId={}",
-                    message.getUserId(),
-                    message.getProductId(),
-                    order.getId());
-
+            stringRedisTemplate.opsForValue().set(orderKey, String.valueOf(order.getId()), ttlSeconds, TimeUnit.SECONDS);
+            stringRedisTemplate.opsForValue().set(resultKey, "SUCCESS", ttlSeconds, TimeUnit.SECONDS);
+            log.info("创建秒杀订单成功 messageId={}, userId={}, productId={}, orderId={}",
+                    message.getMessageId(), userId, productId, order.getId());
         } catch (DuplicateKeyException e) {
-            log.warn("重复下单，已忽略: userId={}, productId={}", userId, productId);
+            SeckillOrderPO existed = seckillOrderMapper.getByUserIdAndProductId(userId, productId);
+            if (existed != null) {
+                stringRedisTemplate.opsForValue().set(orderKey, String.valueOf(existed.getId()), ttlSeconds, TimeUnit.SECONDS);
+                stringRedisTemplate.opsForValue().set(resultKey, "SUCCESS", ttlSeconds, TimeUnit.SECONDS);
+                log.warn("重复下单消息幂等处理 messageId={}, userId={}, productId={}, orderId={}",
+                        message.getMessageId(), userId, productId, existed.getId());
+                return;
+            }
+            throw e;
         }
     }
+
+    @Override
+    public void handleSeckillFailure(SeckillMessage message) {
+        Long userId = message.getUserId();
+        Long productId = message.getProductId();
+        long ttlSeconds = resolveTtlSeconds(message.getExpireAt());
+
+        String orderKey = RedisKeys.seckillOrder(userId, productId);
+        String resultKey = RedisKeys.seckillResult(userId, productId);
+        String userKey = RedisKeys.seckillUser(productId);
+        String stockKey = RedisKeys.seckillStock(productId);
+
+        String orderId = stringRedisTemplate.opsForValue().get(orderKey);
+        if (orderId != null) {
+            log.warn("死信补偿跳过：订单已存在，messageId={}, userId={}, productId={}, orderId={}",
+                    message.getMessageId(), userId, productId, orderId);
+            return;
+        }
+
+        stringRedisTemplate.opsForSet().remove(userKey, String.valueOf(userId));
+        stringRedisTemplate.opsForValue().increment(stockKey);
+        stringRedisTemplate.opsForValue().set(resultKey, "FAIL", ttlSeconds, TimeUnit.SECONDS);
+        log.error("秒杀消息进入死信并已补偿完成，请关注告警与人工排查。messageId={}, userId={}, productId={}",
+                message.getMessageId(), userId, productId);
     }
 
+    private long resolveTtlSeconds(LocalDateTime expireAt) {
+        if (expireAt == null) {
+            return DEFAULT_RESULT_TTL_SECONDS;
+        }
+        long ttlSeconds = Duration.between(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant(),
+                expireAt.atZone(ZoneId.systemDefault()).toInstant()).getSeconds();
+        return Math.max(ttlSeconds, DEFAULT_RESULT_TTL_SECONDS);
+    }
+}

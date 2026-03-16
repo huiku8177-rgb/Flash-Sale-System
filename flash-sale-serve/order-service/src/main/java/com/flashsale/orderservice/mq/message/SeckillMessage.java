@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
 @Data
 public class SeckillMessage implements Serializable {
 
+    private String messageId;
+
     private Long userId;
 
     private Long productId;
@@ -22,4 +24,6 @@ public class SeckillMessage implements Serializable {
     private BigDecimal seckillPrice;
 
     private LocalDateTime createTime;
+
+    private LocalDateTime expireAt;
 }

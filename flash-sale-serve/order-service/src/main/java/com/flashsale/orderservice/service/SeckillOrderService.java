@@ -19,4 +19,6 @@ public interface SeckillOrderService {
     Result<SeckillOrderVO> getOrderDetail(Long id);
 
     void createSeckillOrder(SeckillMessage message);
+
+    void handleSeckillFailure(SeckillMessage message);
 }
