@@ -20,6 +20,11 @@ import java.time.LocalDateTime;
 public class SeckillMessage implements Serializable {
 
     /**
+     * 消息唯一ID（用于消费幂等）
+     */
+    private String messageId;
+
+    /**
      * 用户ID
      */
     private Long userId;
@@ -38,4 +43,9 @@ public class SeckillMessage implements Serializable {
      * 请求时间
      */
     private LocalDateTime createTime;
+
+    /**
+     * 结果和幂等数据建议过期时间
+     */
+    private LocalDateTime expireAt;
 }

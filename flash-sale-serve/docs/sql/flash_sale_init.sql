@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS seckill_order (
     status TINYINT NOT NULL DEFAULT 0 COMMENT '0-created,1-paid,2-cancelled',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'update time',
+    UNIQUE KEY uk_order_user_product (user_id, product_id),
     KEY idx_order_user_id (user_id),
     KEY idx_order_product_id (product_id),
     KEY idx_order_create_time (create_time)

@@ -71,6 +71,12 @@ public final class RedisKeys {
     public static final String PREFIX_SECKILL_ORDER = PREFIX_SECKILL + "order:";
 
     /**
+     * 秒杀处理状态前缀
+     * 示例：seckill:result:1001:1
+     */
+    public static final String PREFIX_SECKILL_RESULT = PREFIX_SECKILL + "result:";
+
+    /**
      * MQ 消费幂等前缀（可选扩展）
      * 示例：seckill:mq:consume:msgId123
      */
@@ -132,6 +138,13 @@ public final class RedisKeys {
      */
     public static String seckillOrder(Long userId, Long productId) {
         return PREFIX_SECKILL_ORDER + userId + ":" + productId;
+    }
+
+    /**
+     * 秒杀状态 key
+     */
+    public static String seckillResult(Long userId, Long productId) {
+        return PREFIX_SECKILL_RESULT + userId + ":" + productId;
     }
 
     /**
