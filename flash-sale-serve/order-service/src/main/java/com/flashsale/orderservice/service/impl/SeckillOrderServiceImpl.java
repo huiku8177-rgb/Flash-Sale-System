@@ -1,10 +1,11 @@
 package com.flashsale.orderservice.service.impl;
 
 import com.flashsale.common.domain.Result;
+import com.flashsale.common.domain.ResultCode;
 import com.flashsale.common.redis.RedisKeys;
 import com.flashsale.orderservice.domain.po.SeckillOrderPO;
 import com.flashsale.orderservice.domain.vo.SeckillOrderVO;
-import com.flashsale.orderservice.mapper.ProductMapper;
+import com.flashsale.orderservice.mapper.SeckillProductMapper;
 import com.flashsale.orderservice.mapper.SeckillOrderMapper;
 import com.flashsale.orderservice.mq.message.SeckillMessage;
 import com.flashsale.orderservice.service.SeckillOrderService;
@@ -36,17 +37,27 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
     private static final long DEFAULT_RESULT_TTL_SECONDS = 3600L;
 
     private final SeckillOrderMapper seckillOrderMapper;
-    private final ProductMapper productMapper;
+    private final SeckillProductMapper seckillProductMapper;
     private final StringRedisTemplate stringRedisTemplate;
 
     @Override
-    public Result<List<SeckillOrderVO>> listOrders() {
-        return Result.success(seckillOrderMapper.listOrders());
+    public Result<List<SeckillOrderVO>> listOrders(Long userId) {
+        if (userId == null) {
+            return Result.error(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(seckillOrderMapper.listOrders(userId));
     }
 
     @Override
-    public Result<SeckillOrderVO> getOrderDetail(Long id) {
-        return Result.success(seckillOrderMapper.getOrderDetail(id));
+    public Result<SeckillOrderVO> getOrderDetail(Long userId, Long id) {
+        if (userId == null) {
+            return Result.error(ResultCode.UNAUTHORIZED);
+        }
+        SeckillOrderVO order = seckillOrderMapper.getOrderDetail(userId, id);
+        if (order == null) {
+            return Result.error(ResultCode.BUSINESS_ERROR, "订单不存在");
+        }
+        return Result.success(order);
     }
 
     /**
@@ -64,7 +75,7 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
         String resultKey = RedisKeys.seckillResult(userId, productId);
 
         try {
-            int updated = productMapper.decreaseStock(productId);
+            int updated = seckillProductMapper.decreaseStock(productId);
             if (updated <= 0) {
                 throw new RuntimeException("扣减数据库库存失败");
             }

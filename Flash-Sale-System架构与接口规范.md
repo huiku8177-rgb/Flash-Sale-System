@@ -98,7 +98,7 @@ Base Path：`/auth`
 ```
 
 - **失败场景（建议）**：
-  - 用户名已存在 -> `BUSINESS_ERROR`（当前实现抛出异常，建议后续统一由全局异常处理器转换）
+  - 用户名已存在 -> `code=2003`，`message=用户名已存在`
 
 ### 3.2 用户登录
 
@@ -148,6 +148,7 @@ Base Path：`/auth`
 - `/auth/**` -> `auth-service`
 - `/order/**` -> `order-service`
 - `/seckill/**` -> `seckill-service`
+- `/seckill-product/**` -> `seckill-service`
 
 ### 4.2 白名单
 
@@ -192,6 +193,13 @@ Base Path：`/auth`
 
 ## 6. 当前实现与后续规划边界
 
+### 6.1 当前商品表设计说明
+
+- 秒杀商品当前使用 `seckill_product` 表。
+- 普通商品当前使用 `product` 表，已接通首页展示与商品详情场景。
+- 当前秒杀商品接口已拆分到 `/seckill-product/**`；普通商品接口已落地到 `/product/**`。
+- 源码命名上，秒杀商品链路已统一调整为 `SeckillProductController / Service / Mapper / PO / VO`，避免与普通商品 `ProductPO / ProductVO` 混淆。
+
 ### 已完成
 
 - Auth-Service 登录注册主流程
@@ -201,7 +209,7 @@ Base Path：`/auth`
 
 ### 待完成（下一阶段）
 
-- 商品查询接口
+- 普通商品查询与详情接口
 - 秒杀接口（库存校验 + 防重复购买）
 - Redis + Lua 原子扣库存
 - RabbitMQ 异步下单

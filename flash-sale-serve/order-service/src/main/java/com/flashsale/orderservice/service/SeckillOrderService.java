@@ -14,9 +14,9 @@ import java.util.List;
  */
 public interface SeckillOrderService {
 
-    Result<List<SeckillOrderVO>> listOrders();
+    Result<List<SeckillOrderVO>> listOrders(Long userId);
 
-    Result<SeckillOrderVO> getOrderDetail(Long id);
+    Result<SeckillOrderVO> getOrderDetail(Long userId, Long id);
 
     void createSeckillOrder(SeckillMessage message);
 

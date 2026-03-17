@@ -3,15 +3,15 @@ package com.flashsale.seckillservice.service.impl;
 import com.flashsale.common.domain.Result;
 import com.flashsale.common.redis.RedisKeys;
 import com.flashsale.seckillservice.domain.dto.SeckillRequestDTO;
-import com.flashsale.seckillservice.domain.po.ProductPO;
+import com.flashsale.seckillservice.domain.po.SeckillProductPO;
 import com.flashsale.seckillservice.domain.vo.SeckillResultVO;
 import com.flashsale.seckillservice.domain.vo.SeckillStatusVO;
-import com.flashsale.seckillservice.mapper.ProductMapper;
+import com.flashsale.seckillservice.mapper.SeckillProductMapper;
 import com.flashsale.seckillservice.mq.SeckillProducer;
 import com.flashsale.seckillservice.mq.message.SeckillMessage;
 import com.flashsale.seckillservice.service.SeckillService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -30,7 +30,6 @@ import java.util.concurrent.TimeUnit;
  * @date 2026/3/13 17:00
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SeckillServiceImpl implements SeckillService {
 
@@ -39,11 +38,24 @@ public class SeckillServiceImpl implements SeckillService {
     /** 结果缓存兜底 TTL（秒）。 */
     private static final long DEFAULT_RESULT_TTL_SECONDS = 3600L;
 
-    private final ProductMapper productMapper;
+    private final SeckillProductMapper seckillProductMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final DefaultRedisScript<Long> seckillScript;
     private final DefaultRedisScript<Long> seckillRollbackScript;
     private final SeckillProducer seckillProducer;
+
+    public SeckillServiceImpl(
+            SeckillProductMapper seckillProductMapper,
+            StringRedisTemplate stringRedisTemplate,
+            @Qualifier("seckillScript") DefaultRedisScript<Long> seckillScript,
+            @Qualifier("seckillRollbackScript") DefaultRedisScript<Long> seckillRollbackScript,
+            SeckillProducer seckillProducer) {
+        this.seckillProductMapper = seckillProductMapper;
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.seckillScript = seckillScript;
+        this.seckillRollbackScript = seckillRollbackScript;
+        this.seckillProducer = seckillProducer;
+    }
 
     /**
      * 秒杀入口：完成参数/活动校验、Lua 原子扣减、写入 PROCESSING 状态并异步投递 MQ。
@@ -54,12 +66,14 @@ public class SeckillServiceImpl implements SeckillService {
         Long userId = requestDTO.getUserId();
         SeckillResultVO result = new SeckillResultVO();
         result.setProductId(productId);
+
         if (productId == null || userId == null) {
             result.setSuccess(false);
             result.setMessage("请求参数错误");
             return Result.success(result);
         }
-        ProductPO product = productMapper.getById(productId);
+
+        SeckillProductPO product = seckillProductMapper.getById(productId);
         if (product == null) {
             result.setSuccess(false);
             result.setMessage("商品不存在");
@@ -93,6 +107,7 @@ public class SeckillServiceImpl implements SeckillService {
                 Arrays.asList(stockKey, userKey),
                 String.valueOf(userId)
         );
+
         if (luaResult == null) {
             result.setSuccess(false);
             result.setMessage("系统繁忙，请稍后重试");
@@ -144,13 +159,8 @@ public class SeckillServiceImpl implements SeckillService {
         return Result.success(result);
     }
 
-
     /**
      * 获取秒杀结果
-     *
-     * @param userId
-     * @param productId
-     * @return
      */
     @Override
     public Result<SeckillStatusVO> getSeckillResult(Long userId, Long productId) {
@@ -197,7 +207,6 @@ public class SeckillServiceImpl implements SeckillService {
         result.setStatus(-1);
         result.setMessage("秒杀失败");
         return Result.success(result);
-
     }
 
     private long calculateResultTtlSeconds(LocalDateTime endTime, LocalDateTime now) {
@@ -205,8 +214,10 @@ public class SeckillServiceImpl implements SeckillService {
             return DEFAULT_RESULT_TTL_SECONDS;
         }
         LocalDateTime expireTime = endTime.plusSeconds(RESULT_BUFFER_SECONDS);
-        long ttl = Duration.between(now.atZone(ZoneId.systemDefault()).toInstant(),
-                expireTime.atZone(ZoneId.systemDefault()).toInstant()).getSeconds();
+        long ttl = Duration.between(
+                now.atZone(ZoneId.systemDefault()).toInstant(),
+                expireTime.atZone(ZoneId.systemDefault()).toInstant()
+        ).getSeconds();
         return Math.max(ttl, DEFAULT_RESULT_TTL_SECONDS);
     }
 }

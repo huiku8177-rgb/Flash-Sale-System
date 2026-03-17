@@ -12,6 +12,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.retry.MessageRecoverer;
 import org.springframework.amqp.rabbit.retry.RepublishMessageRecoverer;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -20,11 +21,9 @@ import java.util.Map;
 
 /**
  * RabbitMQ 基础设施配置。
- *
- * <p>说明：
+ * 说明：
  * - 主流程：exchange -> seckill.order.queue
  * - 异常流程：重试耗尽后 republish 到 DLX -> seckill.order.dlq
- * </p>
  */
 @Configuration
 public class RabbitMqConfig {
@@ -70,32 +69,20 @@ public class RabbitMqConfig {
     }
 
     @Bean
-    public Binding seckillOrderBinding(Queue seckillOrderQueue, TopicExchange seckillExchange) {
-        return BindingBuilder
-                .bind(seckillOrderQueue)
-                .to(seckillExchange)
-                .with(SECKILL_ORDER_ROUTING_KEY);
+    public Binding seckillOrderBinding(
+            @Qualifier("seckillOrderQueue") Queue queue,
+            @Qualifier("seckillExchange") TopicExchange exchange) {
+        return BindingBuilder.bind(queue).to(exchange).with(SECKILL_ORDER_ROUTING_KEY);
     }
 
     @Bean
-    public Binding seckillOrderDeadLetterBinding(Queue seckillOrderDeadLetterQueue, TopicExchange seckillDeadLetterExchange) {
-        return BindingBuilder
-                .bind(seckillOrderDeadLetterQueue)
-                .to(seckillDeadLetterExchange)
-                .with(SECKILL_ORDER_DLQ_ROUTING_KEY);
+    public Binding seckillOrderDeadLetterBinding(
+            @Qualifier("seckillOrderDeadLetterQueue") Queue queue,
+            @Qualifier("seckillDeadLetterExchange") TopicExchange exchange) {
+        return BindingBuilder.bind(queue).to(exchange).with(SECKILL_ORDER_DLQ_ROUTING_KEY);
     }
 
-    /**
-     * 秒杀消费者容器工厂。
-     *
-     * <p>关键策略：</p>
-     * <ul>
-     *     <li>MANUAL ACK：业务成功后显式确认；</li>
-     *     <li>defaultRequeueRejected=false：异常不直接回原队列，避免无限堆积；</li>
-     *     <li>stateless retry：最多重试 3 次；</li>
-     *     <li>重试耗尽后由 recoverer 转发到 DLX。</li>
-     * </ul>
-     */
+
     @Bean
     public SimpleRabbitListenerContainerFactory seckillListenerContainerFactory(
             ConnectionFactory connectionFactory,

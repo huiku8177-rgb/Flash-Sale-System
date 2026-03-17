@@ -16,9 +16,9 @@ import java.util.List;
 @Mapper
 public interface SeckillOrderMapper {
 
-    List<SeckillOrderVO> listOrders();
+    List<SeckillOrderVO> listOrders(@Param("userId") Long userId);
 
-    SeckillOrderVO getOrderDetail(@Param("id") Long id);
+    SeckillOrderVO getOrderDetail(@Param("userId") Long userId, @Param("id") Long id);
 
     void insert(SeckillOrderPO order);
 

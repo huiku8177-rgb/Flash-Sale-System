@@ -6,6 +6,7 @@ import com.flashsale.orderservice.service.SeckillOrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -25,12 +26,13 @@ public class OrderController {
     private final SeckillOrderService seckillOrderService;
 
     @GetMapping("/orders")
-    public Result<List<SeckillOrderVO>> listOrders() {
-        return seckillOrderService.listOrders();
+    public Result<List<SeckillOrderVO>> listOrders(@RequestHeader("X-User-Id") Long userId) {
+        return seckillOrderService.listOrders(userId);
     }
 
     @GetMapping("/orderDetail/{id}")
-    public Result<SeckillOrderVO> getOrderDetail(@PathVariable Long id) {
-        return seckillOrderService.getOrderDetail(id);
+    public Result<SeckillOrderVO> getOrderDetail(@RequestHeader("X-User-Id") Long userId,
+                                                 @PathVariable Long id) {
+        return seckillOrderService.getOrderDetail(userId, id);
     }
 }

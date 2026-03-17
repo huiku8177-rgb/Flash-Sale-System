@@ -108,7 +108,7 @@ RabbitMQ消费消息 -> 创建订单 -> 写入数据库
 | `password`    | varchar  | 密码     |
 | `create_time` | datetime | 创建时间 |
 
-### 2. 商品表 (`product`)
+### 2. 秒杀商品表 (`seckill_product`)
 
 | **字段**        | **类型** | **说明**     |
 | --------------- | -------- | ------------ |
@@ -120,13 +120,30 @@ RabbitMQ消费消息 -> 创建订单 -> 写入数据库
 | `start_time`    | datetime | 秒杀开始时间 |
 | `end_time`      | datetime | 秒杀结束时间 |
 
-### 3. 秒杀订单表 (`seckill_order`)
+### 3. 普通商品表 (`product`)
+
+| **字段**         | **类型** | **说明**         |
+| ---------------- | -------- | ---------------- |
+| `id`             | bigint   | 普通商品ID       |
+| `name`           | varchar  | 商品名称         |
+| `subtitle`       | varchar  | 副标题           |
+| `category_id`    | bigint   | 分类ID           |
+| `price`          | decimal  | 售价             |
+| `market_price`   | decimal  | 划线价           |
+| `stock`          | int      | 普通库存         |
+| `status`         | tinyint  | 0下架/1上架      |
+| `main_image`     | varchar  | 主图地址         |
+| `detail`         | text     | 商品详情         |
+| `create_time`    | datetime | 创建时间         |
+| `update_time`    | datetime | 更新时间         |
+
+### 4. 秒杀订单表 (`seckill_order`)
 
 | **字段**      | **类型** | **说明** |
 | ------------- | -------- | -------- |
 | `id`          | bigint   | 订单ID   |
 | `user_id`     | bigint   | 用户ID   |
-| `product_id`  | bigint   | 商品ID   |
+| `product_id`  | bigint   | 秒杀商品ID |
 | `status`      | int      | 订单状态 |
 | `create_time` | datetime | 创建时间 |
 

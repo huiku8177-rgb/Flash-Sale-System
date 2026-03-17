@@ -48,8 +48,7 @@ public class UserController {
     public Result register(@RequestBody UserDTO userDTO){
         log.info("用户注册: {}", userDTO.getUsername());
         // 注册流程：用户名唯一性校验 + 密码加密后入库（在 service 完成）
-        userService.register(userDTO);
-        return Result.success();
+        return userService.register(userDTO);
     }
     /**
      * 用户登出

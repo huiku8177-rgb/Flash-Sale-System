@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
@@ -41,6 +42,11 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         String path = request.getPath().toString();
 
         log.info("网关鉴权过滤器拦截请求: {}", path);
+
+        // 预检请求不做鉴权，交给跨域过滤器处理。
+        if (request.getMethod() == HttpMethod.OPTIONS) {
+            return chain.filter(exchange);
+        }
 
         // 1. 白名单放行
         if (isExclude(path)) {

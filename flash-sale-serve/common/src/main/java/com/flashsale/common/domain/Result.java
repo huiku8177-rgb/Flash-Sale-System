@@ -37,12 +37,13 @@ public class Result<T> {
         Result<T> result = new Result<>();
         result.setCode(code.getCode());
         result.setMessage(code.getMessage());
+        result.setTimestamp(LocalDateTime.now());
         return result;
     }
 
-    public static Result<Void> error(ResultCode code, String message){
+    public static <T> Result<T> error(ResultCode code, String message){
 
-        Result<Void> result = new Result<>();
+        Result<T> result = new Result<>();
         result.setCode(code.getCode());
         result.setMessage(message);
         result.setTimestamp(LocalDateTime.now());

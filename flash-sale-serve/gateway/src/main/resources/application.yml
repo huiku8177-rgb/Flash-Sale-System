@@ -24,6 +24,14 @@ spring:
           uri: lb://seckill-service
           predicates:
             - Path=/seckill/**
+        - id: seckill-product-service
+          uri: lb://seckill-service
+          predicates:
+            - Path=/seckill-product/**
+        - id: product-service
+          uri: lb://seckill-service
+          predicates:
+            - Path=/product/**
 server:
   port: 8080
 flash-sale:

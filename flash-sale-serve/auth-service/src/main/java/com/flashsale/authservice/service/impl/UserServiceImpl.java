@@ -63,13 +63,13 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public void register(UserDTO userDTO) {
+    public Result register(UserDTO userDTO) {
         log.info("用户注册: {}", userDTO.getUsername());
 
         // 1) 用户名唯一性校验
         User oldUser = userMapper.findByUsername(userDTO.getUsername());
         if (oldUser != null) {
-            throw new IllegalArgumentException("用户名已存在");
+            return Result.error(ResultCode.BUSINESS_ERROR, "用户名已存在");
         }
 
         // 2) 密码加密后入库
@@ -78,5 +78,6 @@ public class UserServiceImpl implements UserService {
         user.setPassword(passwordEncoder.encode(userDTO.getPassword()));
 
         userMapper.insert(user);
+        return Result.success();
     }
 }

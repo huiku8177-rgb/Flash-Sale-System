@@ -8,5 +8,5 @@ public interface UserService {
 
     Result<UserVO> login(UserDTO userDTO);
 
-    void register(UserDTO userDTO);
+    Result<Void> register(UserDTO userDTO);
 }

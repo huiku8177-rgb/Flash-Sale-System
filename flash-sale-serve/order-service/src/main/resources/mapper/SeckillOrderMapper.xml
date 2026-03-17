@@ -38,6 +38,7 @@
         SELECT
         <include refid="BaseSeckillOrderColumns"/>
         FROM seckill_order
+        WHERE user_id = #{userId}
         ORDER BY create_time DESC
     </select>
 
@@ -46,6 +47,7 @@
         <include refid="BaseSeckillOrderColumns"/>
         FROM seckill_order
         WHERE id = #{id}
+          AND user_id = #{userId}
     </select>
 
 </mapper>

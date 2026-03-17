@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.flashsale.seckillservice.mapper.SeckillProductMapper">
+
+    <resultMap id="SeckillProductVOResultMap" type="com.flashsale.seckillservice.domain.vo.SeckillProductVO">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="price" column="price"/>
+        <result property="seckillPrice" column="seckill_price"/>
+        <result property="stock" column="stock"/>
+        <result property="status" column="status"/>
+        <result property="startTime" column="start_time"/>
+        <result property="endTime" column="end_time"/>
+    </resultMap>
+
+    <sql id="BaseSeckillProductColumns">
+        id,
+        name,
+        price,
+        seckill_price,
+        stock,
+        status,
+        start_time,
+        end_time
+    </sql>
+
+    <select id="listProducts" resultMap="SeckillProductVOResultMap">
+        SELECT
+        <include refid="BaseSeckillProductColumns"/>
+        FROM seckill_product
+        <where>
+            <if test="queryDTO != null and queryDTO.name != null and queryDTO.name != ''">
+                AND name LIKE CONCAT('%', #{queryDTO.name}, '%')
+            </if>
+            <if test="queryDTO != null and queryDTO.status != null">
+                AND status = #{queryDTO.status}
+            </if>
+        </where>
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="getProductDetail" resultMap="SeckillProductVOResultMap">
+        SELECT
+        <include refid="BaseSeckillProductColumns"/>
+        FROM seckill_product
+        WHERE id = #{id}
+    </select>
+
+    <select id="listAll" resultType="com.flashsale.seckillservice.domain.po.SeckillProductPO">
+        SELECT id, stock
+        FROM seckill_product
+        WHERE status = 1
+    </select>
+
+    <select id="getById" resultType="com.flashsale.seckillservice.domain.po.SeckillProductPO"
+            parameterType="java.lang.Long">
+        SELECT *
+        FROM seckill_product
+        WHERE id = #{id}
+    </select>
+
+</mapper>
