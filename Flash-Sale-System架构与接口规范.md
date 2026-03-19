@@ -1,243 +1,259 @@
-# Flash-Sale-System 架构与接口规范（V1.1）
+# Flash-Sale-System 架构与接口规范
 
-> 本文档聚焦当前**已完成模块**：`auth-service`（登录/注册）与 `gateway`（统一路由 + JWT 鉴权）。
+> 版本：V2.0  
+> 状态：以当前仓库代码为准
 
----
-
-## 1. 当前架构总览（已落地部分）
+## 1. 总体架构
 
 ```text
-客户端
-  │
-  ▼
-Gateway（路由 + 鉴权 + 用户透传）
-  ├── /auth/**   -> auth-service（登录/注册，免鉴权）
-  ├── /order/**  -> order-service（需鉴权）
-  └── /seckill/**-> seckill-service（需鉴权）
+Browser
+  -> Gateway
+      -> auth-service
+      -> seckill-service
+      -> order-service
+  -> MySQL
+  -> Redis
+  -> RabbitMQ
+  -> Nacos
 ```
 
-### 1.1 Gateway 职责边界
+## 2. 服务边界
 
-- 统一入口：所有请求先进入 Gateway。
-- 鉴权校验：提取 `Authorization: Bearer <token>` 并校验 JWT。
-- 白名单放行：登录、注册接口无需 token。
-- 用户透传：鉴权成功后向下游追加 `X-User-Id` 请求头。
+### 2.1 gateway
 
-### 1.2 Auth-Service 职责边界
+职责：
 
-- 用户注册：账号唯一性校验 + BCrypt 密码加密存储。
-- 用户登录：账号密码校验成功后签发 JWT。
-- 认证能力集中：JWT 签发逻辑由 `common` 模块的 `JwtTool` 提供。
+- 统一入口
+- JWT 鉴权
+- 白名单放行
+- 向下游透传 `X-User-Id`
+- 路由转发
 
----
+当前路由：
 
-## 2. 统一响应规范
+- `/auth/**`
+- `/order/**`
+- `/seckill/**`
+- `/seckill-product/**`
+- `/product/**`
 
-所有业务接口统一返回：
+### 2.2 auth-service
+
+职责：
+
+- 注册
+- 登录
+- 获取当前用户
+- 修改密码
+
+### 2.3 seckill-service
+
+职责：
+
+- 普通商品查询
+- 秒杀商品查询
+- 秒杀请求入口
+- 秒杀结果查询
+- 秒杀库存控制
+- 秒杀结果 Redis 缓存与数据库兜底
+
+### 2.4 order-service
+
+职责：
+
+- 秒杀订单查询
+- 秒杀订单模拟支付
+- 普通订单创建
+- 普通订单详情
+- 普通订单模拟支付
+- 两类订单支付状态查询
+
+## 3. 鉴权规范
+
+### 3.1 白名单
+
+- `POST /auth/login`
+- `POST /auth/register`
+
+### 3.2 受保护接口
+
+除白名单外，其他接口默认都需要：
+
+```http
+Authorization: Bearer <token>
+```
+
+Gateway 鉴权成功后向下游补充：
+
+```http
+X-User-Id: <userId>
+```
+
+### 3.3 设计约束
+
+- 下游业务服务不重复解析 JWT
+- 下游统一通过 `X-User-Id` 获取当前用户
+- 商品接口当前也属于受保护接口
+
+## 4. 统一响应规范
+
+统一返回：
 
 ```json
 {
   "code": 200,
   "message": "success",
   "data": {},
-  "timestamp": "2026-03-11T17:30:00"
+  "timestamp": "2026-03-19T12:00:00"
 }
 ```
 
-字段说明：
+通用业务码：
 
-- `code`：业务状态码（非 HTTP 状态码）
-- `message`：业务提示信息
-- `data`：业务数据（可为 `null`）
-- `timestamp`：服务端响应时间
+- `200`
+- `400`
+- `401`
+- `403`
+- `500`
+- `2001`
+- `2002`
+- `2003`
 
-### 2.1 状态码约定
+## 5. 当前数据库实体约定
 
-#### 通用状态码
+### 5.1 用户
 
-- `200`：成功
-- `400`：请求参数错误
-- `401`：未认证
-- `403`：无权限
-- `500`：系统异常
+- 表：`user`
 
-#### 秒杀业务状态码（预留）
+核心字段：
 
-- `2001`：库存不足
-- `2002`：重复秒杀
-- `2003`：通用业务异常
+- `id`
+- `username`
+- `password`
+- `create_time`
 
----
+### 5.2 普通商品
 
-## 3. Auth-Service 接口规范（已实现）
+- 表：`product`
 
-Base Path：`/auth`
+核心字段：
 
-### 3.1 用户注册
+- `id`
+- `name`
+- `subtitle`
+- `category_id`
+- `price`
+- `market_price`
+- `stock`
+- `status`
+- `main_image`
+- `detail`
 
-- **URL**：`POST /auth/register`
-- **鉴权**：否（白名单）
-- **请求体**：
+### 5.3 秒杀商品
 
-```json
-{
-  "username": "neo",
-  "password": "123456"
-}
-```
+- 表：`seckill_product`
 
-- **成功响应**：
+核心字段：
 
-```json
-{
-  "code": 200,
-  "message": "success",
-  "data": null,
-  "timestamp": "2026-03-12T10:20:00"
-}
-```
+- `id`
+- `name`
+- `price`
+- `seckill_price`
+- `stock`
+- `status`
+- `start_time`
+- `end_time`
 
-- **失败场景（建议）**：
-  - 用户名已存在 -> `code=2003`，`message=用户名已存在`
+### 5.4 秒杀订单
 
-### 3.2 用户登录
+- 表：`seckill_order`
 
-- **URL**：`POST /auth/login`
-- **鉴权**：否（白名单）
-- **请求体**：
+核心字段：
 
-```json
-{
-  "username": "neo",
-  "password": "123456"
-}
-```
+- `id`
+- `user_id`
+- `product_id`
+- `status`
+- `create_time`
 
-- **成功响应**：
+### 5.5 普通订单
 
-```json
-{
-  "code": 200,
-  "message": "success",
-  "data": {
-    "userId": 1,
-    "username": "neo",
-    "token": "eyJhbGciOiJSUzI1NiJ9..."
-  },
-  "timestamp": "2026-03-12T10:21:00"
-}
-```
+- 表：`normal_order`
+- 表：`normal_order_item`
 
-- **失败响应（示例）**：
+核心字段：
 
-```json
-{
-  "code": 401,
-  "message": "unauthorized",
-  "data": null,
-  "timestamp": "2026-03-12T10:21:10"
-}
-```
+- 主表：`order_no`、`user_id`、`order_status`、`total_amount`、`pay_amount`、`pay_time`、`remark`、`address_snapshot`
+- 明细表：`product_id`、`product_name`、`product_subtitle`、`product_image`、`sale_price`、`quantity`、`item_amount`
 
----
+## 6. 当前接口分层约定
 
-## 4. Gateway 鉴权规范（已实现）
+### 6.1 Auth
 
-### 4.1 路由规则
+- `POST /auth/login`
+- `POST /auth/register`
+- `POST /auth/logout`
+- `GET /auth/me`
+- `POST /auth/updatePassword`
 
-- `/auth/**` -> `auth-service`
-- `/order/**` -> `order-service`
-- `/seckill/**` -> `seckill-service`
-- `/seckill-product/**` -> `seckill-service`
+### 6.2 商品
 
-### 4.2 白名单
+- `GET /product/products`
+- `GET /product/products/{id}`
+- `GET /seckill-product/products`
+- `GET /seckill-product/products/{id}`
 
-当前白名单路径：
+### 6.3 秒杀
 
-- `/auth/login`
-- `/auth/register`
+- `POST /seckill/{productId}`
+- `GET /seckill/result/{productId}`
 
-### 4.3 鉴权流程
+### 6.4 订单
 
-1. 判断请求路径是否命中白名单；命中则直接放行。
-2. 非白名单请求，读取 `Authorization` 头。
-3. 校验头格式必须为：`Bearer <token>`。
-4. 调用 `JwtTool.parseToken(token)` 解析用户信息。
-5. 解析失败 -> 返回 HTTP 401。
-6. 解析成功 -> 向下游透传请求头：`X-User-Id: <userId>`。
+秒杀订单：
 
-### 4.4 交互约束
+- `GET /order/orders`
+- `GET /order/orderDetail/{id}`
+- `POST /order/seckill-orders/{id}/pay`
+- `GET /order/seckill-pay-status/{id}`
 
-- 下游服务禁止自行重复解析 JWT，统一依赖 Gateway 透传用户身份。
-- 下游服务获取当前用户时，统一读取 `X-User-Id`。
+普通订单：
 
----
+- `POST /order/checkout`
+- `GET /order/normal-orders`
+- `GET /order/normal-orders/{id}`
+- `POST /order/normal-orders/{id}/pay`
+- `GET /order/pay-status/{id}`
 
-## 5. 安全设计说明（已落地）
+## 7. 订单状态约定
 
-### 5.1 密码安全
+### 7.1 秒杀订单
 
-- 注册时使用 `BCryptPasswordEncoder` 加密存储。
-- 登录时使用 `matches` 进行哈希校验，不做明文比较。
+- `0`：待支付
+- `1`：已支付
+- `2`：已取消
 
-### 5.2 JWT 安全
+### 7.2 普通订单
 
-- 使用 `RSA` 密钥对签名（`RS256`）。
-- Token 携带 `user` 载荷与过期时间。
-- 解析时进行：
-  - 签名校验
-  - 过期校验
-  - 载荷格式校验
+- `0`：待支付
+- `1`：已支付
+- `2`：已取消
+- `3`：已发货
+- `4`：已完成
 
----
+## 8. 前端接入约定
 
-## 6. 当前实现与后续规划边界
+- 前端统一走网关，不再直连服务
+- 前端不再使用 `/pay-product/**`
+- 前端统一不使用 `/seckill-order/**` 历史接口
+- 购物车当前为前端本地状态，不作为后端服务能力描述
 
-### 6.1 当前商品表设计说明
+## 9. 当前保留的实现特点
 
-- 秒杀商品当前使用 `seckill_product` 表。
-- 普通商品当前使用 `product` 表，已接通首页展示与商品详情场景。
-- 当前秒杀商品接口已拆分到 `/seckill-product/**`；普通商品接口已落地到 `/product/**`。
-- 源码命名上，秒杀商品链路已统一调整为 `SeckillProductController / Service / Mapper / PO / VO`，避免与普通商品 `ProductPO / ProductVO` 混淆。
+- 秒杀结果支持 Redis 结果查询 + 数据库兜底
+- 秒杀订单与普通订单都已支持模拟支付
+- 修改密码已改为基于当前登录用户，并校验旧密码
 
-### 已完成
+## 10. 版本说明
 
-- Auth-Service 登录注册主流程
-- Gateway 全局鉴权过滤器
-- JWT 签发与解析工具
-- 统一返回结构与状态码
-
-### 待完成（下一阶段）
-
-- 普通商品查询与详情接口
-- 秒杀接口（库存校验 + 防重复购买）
-- Redis + Lua 原子扣库存
-- RabbitMQ 异步下单
-- 订单查询接口
-- 统一异常处理器（`@RestControllerAdvice`）
-
----
-
-## 7. 联调示例
-
-### 7.1 登录获取 token
-
-```bash
-curl -X POST http://localhost:8080/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"neo","password":"123456"}'
-```
-
-### 7.2 携带 token 访问受保护接口
-
-```bash
-curl http://localhost:8080/order/test \
-  -H "Authorization: Bearer <your-token>"
-```
-
----
-
-## 8. 版本记录
-
-- `V1.0`：统一返回规范初版。
-- `V1.1`：补充已实现的 Auth 与 Gateway 架构、接口、鉴权流程规范。
+- `V2.0`：同步普通商品、普通订单、秒杀支付、`/auth/me`、修改密码校验、前端统一接网关后的现状

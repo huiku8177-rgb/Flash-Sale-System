@@ -5,7 +5,14 @@ import { ElMessage } from "element-plus";
 import { logout } from "../api/auth";
 import { useMallApp } from "../composables/useMallApp";
 import { clearSession } from "../stores/auth";
-import { formatCurrency, formatDateTime, getOrderStatusText } from "../utils/format";
+import {
+  formatCurrency,
+  formatDateTime,
+  getCountdownText,
+  getOrderStatusText,
+  getOrderStatusType,
+  getOrderTypeText
+} from "../utils/format";
 
 const route = useRoute();
 const router = useRouter();
@@ -15,17 +22,17 @@ provide("mallApp", mallApp);
 
 const navItems = [
   { label: "首页", routeName: "app-home" },
-  { label: "闪购", routeName: "app-flash" },
+  { label: "秒杀", routeName: "app-flash" },
   { label: "购物车", routeName: "app-cart" },
-  { label: "我的订单", routeName: "app-profile" }
+  { label: "个人中心", routeName: "app-profile" }
 ];
 
-const hotKeywords = ["笔记本", "耳机", "零食", "显示器", "机械键盘"];
+const hotKeywords = ["耳机", "键盘", "零食", "显示器", "饮料"];
 
 const currentTitle = computed(() => {
   const mapping = {
     "app-home": "首页推荐",
-    "app-flash": "闪购会场",
+    "app-flash": "秒杀会场",
     "app-cart": "购物车",
     "app-profile": "个人中心"
   };
@@ -36,6 +43,10 @@ const productApiPath = computed(() => {
   return mallApp.productDetailType === "seckill"
     ? "/seckill-product/products/{id}"
     : "/product/products/{id}";
+});
+
+const selectedOrderAmount = computed(() => {
+  return mallApp.selectedOrder ? mallApp.getOrderDisplayAmount(mallApp.selectedOrder) : 0;
 });
 
 const searchKeyword = computed({
@@ -69,7 +80,7 @@ async function handleLogout() {
 async function handleSearch() {
   await mallApp.loadProducts();
   router.push({ name: "app-home" });
-  ElMessage.success("已按关键词刷新普通商品列表");
+  ElMessage.success("普通商品列表已按关键词刷新");
 }
 
 function jumpNav(routeName) {
@@ -87,13 +98,13 @@ function fillKeyword(keyword) {
     <div class="top-utility-bar">
       <div class="utility-inner">
         <div class="utility-links">
-          <span>欢迎回来，{{ mallApp.authState.username }}</span>
+          <span>欢迎回来，{{ mallApp.profileDisplayName }}</span>
           <button type="button" @click="jumpNav('app-profile')">我的中心</button>
           <button type="button" @click="jumpNav('app-cart')">购物车</button>
-          <button type="button" @click="jumpNav('app-flash')">闪购频道</button>
+          <button type="button" @click="jumpNav('app-flash')">秒杀频道</button>
         </div>
         <div class="utility-links">
-          <span>当前页：{{ currentTitle }}</span>
+          <span>当前页面：{{ currentTitle }}</span>
           <button type="button" @click="handleLogout">退出登录</button>
         </div>
       </div>
@@ -105,7 +116,7 @@ function fillKeyword(keyword) {
           <span class="brand-mark">FS</span>
           <div>
             <strong>Flash Sale Mall</strong>
-            <small>桌面电商联调站</small>
+            <small>普通商品与秒杀商品一体化前端</small>
           </div>
         </button>
 
@@ -166,22 +177,22 @@ function fillKeyword(keyword) {
       <aside class="portal-sidebar">
         <section class="sidebar-card">
           <p class="eyebrow">Account Snapshot</p>
-          <h3>{{ mallApp.authState.username }}</h3>
+          <h3>{{ mallApp.profileDisplayName }}</h3>
           <div class="sidebar-metrics">
             <div>
-              <span>用户ID</span>
+              <span>用户 ID</span>
               <strong>{{ mallApp.authState.userId }}</strong>
             </div>
             <div>
-              <span>普通商品</span>
-              <strong>{{ mallApp.products.length }}</strong>
+              <span>普通订单</span>
+              <strong>{{ mallApp.normalOrders.length }}</strong>
             </div>
             <div>
-              <span>秒杀商品</span>
-              <strong>{{ mallApp.seckillProducts.length }}</strong>
+              <span>秒杀订单</span>
+              <strong>{{ mallApp.seckillOrders.length }}</strong>
             </div>
             <div>
-              <span>草案金额</span>
+              <span>购物车金额</span>
               <strong>{{ formatCurrency(mallApp.cartSummary.total) }}</strong>
             </div>
           </div>
@@ -197,21 +208,21 @@ function fillKeyword(keyword) {
           </div>
           <div class="sidebar-order-list">
             <article
-              v-for="order in mallApp.orders.slice(0, 3)"
-              :key="order.id"
+              v-for="order in mallApp.recentOrders"
+              :key="`${order.orderType}-${order.id}`"
               class="sidebar-order-item"
             >
               <div>
-                <strong>#{{ order.id }}</strong>
+                <strong>{{ order.orderNo || `#${order.id}` }}</strong>
                 <small>{{ formatDateTime(order.createTime) }}</small>
               </div>
               <div class="sidebar-order-meta">
-                <span>{{ getOrderStatusText(order.status) }}</span>
-                <button type="button" @click="mallApp.openOrder(order.id)">详情</button>
+                <span>{{ getOrderTypeText(order.orderType) }}</span>
+                <button type="button" @click="mallApp.openOrder(order)">详情</button>
               </div>
             </article>
             <el-empty
-              v-if="!mallApp.orders.length && !mallApp.ordersLoading"
+              v-if="!mallApp.recentOrders.length && !mallApp.ordersLoading"
               description="暂无订单"
               :image-size="80"
             />
@@ -222,7 +233,7 @@ function fillKeyword(keyword) {
           <div class="sidebar-head">
             <div>
               <p class="eyebrow">Cart Draft</p>
-              <h3>购物车草案</h3>
+              <h3>购物车草稿</h3>
             </div>
             <el-button text @click="jumpNav('app-cart')">查看</el-button>
           </div>
@@ -257,10 +268,10 @@ function fillKeyword(keyword) {
             <div class="detail-hero">
               <span class="detail-badge">
                 {{ mallApp.productDetailType === "seckill" ? "秒杀商品" : "普通商品" }}
-                {{ mallApp.productDetail.id }}
+                #{{ mallApp.productDetail.id }}
               </span>
               <h3>{{ mallApp.productDetail.name }}</h3>
-              <p>当前详情来自 `{{ productApiPath }}`，普通商品与秒杀商品已分别走独立接口。</p>
+              <p>详情数据来自 <code>{{ productApiPath }}</code>，前端会按商品类型自动切换接口。</p>
             </div>
 
             <div class="detail-grid">
@@ -274,7 +285,7 @@ function fillKeyword(keyword) {
               </div>
               <div>
                 <span>状态</span>
-                <strong>{{ mallApp.productDetail.status === 1 ? "上架" : "下架" }}</strong>
+                <strong>{{ mallApp.productDetail.status === 1 ? "上架中" : "已下架" }}</strong>
               </div>
 
               <template v-if="mallApp.productDetailType === 'seckill'">
@@ -302,16 +313,48 @@ function fillKeyword(keyword) {
                   <strong>{{ mallApp.productDetail.subtitle || "--" }}</strong>
                 </div>
                 <div>
-                  <span>分类ID</span>
+                  <span>分类 ID</span>
                   <strong>{{ mallApp.productDetail.categoryId || "--" }}</strong>
                 </div>
               </template>
             </div>
 
-            <div v-if="mallApp.productDetailType === 'normal'" class="detail-hero">
-              <h3>商品详情补充</h3>
-              <p>主图：{{ mallApp.productDetail.mainImage || "当前未配置" }}</p>
-              <p>{{ mallApp.productDetail.detail || "当前商品详情文案还未补充。" }}</p>
+            <div class="detail-hero">
+              <h3>{{ mallApp.productDetailType === "seckill" ? "当前活动状态" : "商品补充信息" }}</h3>
+              <p v-if="mallApp.productDetailType === 'seckill'">
+                {{ getCountdownText(
+                  mallApp.productDetail.startTime,
+                  mallApp.productDetail.endTime,
+                  mallApp.currentTime
+                ) }}
+              </p>
+              <p v-else>主图：{{ mallApp.productDetail.mainImage || "当前未配置" }}</p>
+              <p v-if="mallApp.productDetailType === 'normal'">
+                {{ mallApp.productDetail.detail || "当前商品详情文案尚未补充。" }}
+              </p>
+            </div>
+
+            <div class="dialog-actions">
+              <el-button
+                v-if="mallApp.productDetailType === 'normal'"
+                type="danger"
+                @click="mallApp.addToCart(mallApp.productDetail, 'normal')"
+              >
+                加入购物车
+              </el-button>
+              <template v-else>
+                <el-button @click="mallApp.addToCart(mallApp.productDetail, 'seckill')">
+                  加入草稿
+                </el-button>
+                <el-button
+                  type="danger"
+                  :disabled="!mallApp.canSeckill(mallApp.productDetail)"
+                  :loading="mallApp.getProductCardState(mallApp.productDetail.id).pending"
+                  @click="mallApp.handleSeckill(mallApp.productDetail)"
+                >
+                  发起秒杀
+                </el-button>
+              </template>
             </div>
           </div>
         </template>
@@ -320,36 +363,86 @@ function fillKeyword(keyword) {
 
     <el-dialog
       v-model="mallApp.orderDialogVisible"
-      width="540px"
+      width="680px"
       title="订单详情"
       destroy-on-close
     >
-      <el-skeleton :rows="5" animated :loading="mallApp.orderDetailLoading">
+      <el-skeleton :rows="6" animated :loading="mallApp.orderDetailLoading">
         <template v-if="mallApp.selectedOrder">
-          <div class="detail-grid">
-            <div>
-              <span>订单号</span>
-              <strong>{{ mallApp.selectedOrder.id }}</strong>
+          <div class="detail-stack">
+            <div class="detail-grid detail-grid-wide">
+              <div>
+                <span>订单号</span>
+                <strong>{{ mallApp.selectedOrder.orderNo || mallApp.selectedOrder.id }}</strong>
+              </div>
+              <div>
+                <span>订单类型</span>
+                <strong>{{ getOrderTypeText(mallApp.selectedOrder.orderType) }}</strong>
+              </div>
+              <div>
+                <span>用户 ID</span>
+                <strong>{{ mallApp.selectedOrder.userId }}</strong>
+              </div>
+              <div>
+                <span>状态</span>
+                <strong>{{ getOrderStatusText(mallApp.selectedOrder.status) }}</strong>
+              </div>
+              <div>
+                <span>金额</span>
+                <strong>{{ formatCurrency(selectedOrderAmount) }}</strong>
+              </div>
+              <div>
+                <span>创建时间</span>
+                <strong>{{ formatDateTime(mallApp.selectedOrder.createTime) }}</strong>
+              </div>
             </div>
-            <div>
-              <span>用户ID</span>
-              <strong>{{ mallApp.selectedOrder.userId }}</strong>
+
+            <div v-if="mallApp.selectedOrder.orderType === 'normal'" class="detail-stack">
+              <div class="detail-hero">
+                <h3>普通订单信息</h3>
+                <p>收货地址：{{ mallApp.getAddressSummary(mallApp.selectedOrder) }}</p>
+                <p>备注：{{ mallApp.selectedOrder.remark || "无" }}</p>
+              </div>
+              <div class="order-item-list">
+                <article
+                  v-for="item in mallApp.selectedOrder.items || []"
+                  :key="item.id || item.productId"
+                  class="order-item-card"
+                >
+                  <div>
+                    <strong>{{ item.productName }}</strong>
+                    <small>商品 ID {{ item.productId }}</small>
+                  </div>
+                  <div class="order-item-meta">
+                    <span>x{{ item.quantity }}</span>
+                    <strong>{{ formatCurrency(item.salePrice) }}</strong>
+                  </div>
+                </article>
+              </div>
             </div>
-            <div>
-              <span>商品ID</span>
-              <strong>{{ mallApp.selectedOrder.productId }}</strong>
+
+            <div v-else class="detail-hero">
+              <h3>秒杀订单信息</h3>
+              <p>商品 ID：{{ mallApp.selectedOrder.productId }}</p>
+              <p>秒杀价格：{{ formatCurrency(mallApp.selectedOrder.seckillPrice) }}</p>
             </div>
-            <div>
-              <span>状态</span>
-              <strong>{{ getOrderStatusText(mallApp.selectedOrder.status) }}</strong>
-            </div>
-            <div>
-              <span>秒杀价</span>
-              <strong>{{ formatCurrency(mallApp.selectedOrder.seckillPrice) }}</strong>
-            </div>
-            <div>
-              <span>创建时间</span>
-              <strong>{{ formatDateTime(mallApp.selectedOrder.createTime) }}</strong>
+
+            <div class="dialog-actions">
+              <el-tag :type="getOrderStatusType(mallApp.selectedOrder.status)">
+                {{ getOrderStatusText(mallApp.selectedOrder.status) }}
+              </el-tag>
+              <div class="dialog-actions-right">
+                <el-button @click="mallApp.fetchAndToastPayStatus(mallApp.selectedOrder)">
+                  查询支付状态
+                </el-button>
+                <el-button
+                  v-if="mallApp.isOrderPayable(mallApp.selectedOrder)"
+                  type="danger"
+                  @click="mallApp.payOrder(mallApp.selectedOrder)"
+                >
+                  模拟支付
+                </el-button>
+              </div>
             </div>
           </div>
         </template>

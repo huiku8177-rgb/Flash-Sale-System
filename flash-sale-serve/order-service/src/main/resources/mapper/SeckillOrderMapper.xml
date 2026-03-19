@@ -50,4 +50,12 @@
           AND user_id = #{userId}
     </select>
 
+    <update id="updateStatus">
+        UPDATE seckill_order
+        SET status = #{targetStatus}
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND status = #{expectedStatus}
+    </update>
+
 </mapper>

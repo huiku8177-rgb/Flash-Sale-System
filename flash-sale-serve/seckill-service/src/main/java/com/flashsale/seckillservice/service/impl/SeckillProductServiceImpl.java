@@ -1,6 +1,7 @@
 package com.flashsale.seckillservice.service.impl;
 
 import com.flashsale.common.domain.Result;
+import com.flashsale.common.domain.ResultCode;
 import com.flashsale.common.redis.RedisKeys;
 import com.flashsale.seckillservice.domain.dto.SeckillProductQueryDTO;
 import com.flashsale.seckillservice.domain.po.SeckillProductPO;
@@ -24,12 +25,25 @@ public class SeckillProductServiceImpl implements SeckillProductService {
 
     @Override
     public Result<List<SeckillProductVO>> listProducts(SeckillProductQueryDTO queryDTO) {
+        if (queryDTO == null) {
+            queryDTO = new SeckillProductQueryDTO();
+        }
+        if (queryDTO.getStatus() == null) {
+            queryDTO.setStatus(1);
+        }
         return Result.success(seckillProductMapper.listProducts(queryDTO));
     }
 
     @Override
     public Result<SeckillProductVO> getProductDetail(Long id) {
-        return Result.success(seckillProductMapper.getProductDetail(id));
+        if (id == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "商品ID不能为空");
+        }
+        SeckillProductVO product = seckillProductMapper.getProductDetail(id);
+        if (product == null) {
+            return Result.error(ResultCode.BUSINESS_ERROR, "秒杀商品不存在");
+        }
+        return Result.success(product);
     }
 
     @Override

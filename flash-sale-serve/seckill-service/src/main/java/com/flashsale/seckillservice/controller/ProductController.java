@@ -19,11 +19,23 @@ public class ProductController {
 
     private final ProductService productService;
 
+    /**
+     * 获取商品列表
+     *
+     * @param queryDTO
+     * @return
+     */
     @GetMapping("/products")
     public Result<List<ProductVO>> listProducts(ProductQueryDTO queryDTO) {
         return productService.listProducts(queryDTO);
     }
 
+    /**
+     * 获取商品详情
+     *
+     * @param id
+     * @return
+     */
     @GetMapping("/products/{id}")
     public Result<ProductVO> getProductDetail(@PathVariable("id") Long id) {
         return productService.getProductDetail(id);

@@ -4,9 +4,10 @@ import com.flashsale.common.domain.Result;
 import com.flashsale.common.domain.ResultCode;
 import com.flashsale.common.redis.RedisKeys;
 import com.flashsale.orderservice.domain.po.SeckillOrderPO;
+import com.flashsale.orderservice.domain.vo.SeckillOrderPayStatusVO;
 import com.flashsale.orderservice.domain.vo.SeckillOrderVO;
-import com.flashsale.orderservice.mapper.SeckillProductMapper;
 import com.flashsale.orderservice.mapper.SeckillOrderMapper;
+import com.flashsale.orderservice.mapper.SeckillProductMapper;
 import com.flashsale.orderservice.mq.message.SeckillMessage;
 import com.flashsale.orderservice.service.SeckillOrderService;
 import lombok.RequiredArgsConstructor;
@@ -22,19 +23,14 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description SeckillOrderServiceImpl
- * @date 2026/3/13 17:00
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class SeckillOrderServiceImpl implements SeckillOrderService {
 
-    /** 结果缓存兜底 TTL（秒）：当消息中未携带过期时间时使用。 */
     private static final long DEFAULT_RESULT_TTL_SECONDS = 3600L;
+    private static final int STATUS_CREATED = 0;
+    private static final int STATUS_PAID = 1;
 
     private final SeckillOrderMapper seckillOrderMapper;
     private final SeckillProductMapper seckillProductMapper;
@@ -60,11 +56,59 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
         return Result.success(order);
     }
 
-    /**
-     * 创建秒杀订单
-     *
-     * @param message 秒杀消息
-     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<SeckillOrderVO> mockPay(Long userId, Long id) {
+        if (userId == null) {
+            return Result.error(ResultCode.UNAUTHORIZED);
+        }
+        if (id == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "订单ID不能为空");
+        }
+
+        SeckillOrderVO order = seckillOrderMapper.getOrderDetail(userId, id);
+        if (order == null) {
+            return Result.error(ResultCode.BUSINESS_ERROR, "订单不存在");
+        }
+        if (order.getStatus() != null && order.getStatus() == STATUS_PAID) {
+            return Result.success(order);
+        }
+        if (order.getStatus() != null && order.getStatus() != STATUS_CREATED) {
+            return Result.error(ResultCode.BUSINESS_ERROR, "当前秒杀订单状态不允许支付");
+        }
+
+        int updated = seckillOrderMapper.updateStatus(id, userId, STATUS_CREATED, STATUS_PAID);
+        if (updated <= 0) {
+            return Result.error(ResultCode.BUSINESS_ERROR, "秒杀订单支付失败，请刷新后重试");
+        }
+        return Result.success(seckillOrderMapper.getOrderDetail(userId, id));
+    }
+
+    @Override
+    public Result<SeckillOrderPayStatusVO> getPayStatus(Long userId, Long id) {
+        if (userId == null) {
+            return Result.error(ResultCode.UNAUTHORIZED);
+        }
+        if (id == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "订单ID不能为空");
+        }
+
+        SeckillOrderVO order = seckillOrderMapper.getOrderDetail(userId, id);
+        if (order == null) {
+            return Result.error(ResultCode.BUSINESS_ERROR, "订单不存在");
+        }
+
+        SeckillOrderPayStatusVO payStatusVO = new SeckillOrderPayStatusVO();
+        payStatusVO.setOrderId(order.getId());
+        payStatusVO.setProductId(order.getProductId());
+        payStatusVO.setStatus(order.getStatus());
+        payStatusVO.setSeckillPrice(order.getSeckillPrice());
+        boolean paid = order.getStatus() != null && order.getStatus() == STATUS_PAID;
+        payStatusVO.setPaid(paid);
+        payStatusVO.setMessage(paid ? "秒杀订单已支付" : "秒杀订单待支付");
+        return Result.success(payStatusVO);
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void createSeckillOrder(SeckillMessage message) {
@@ -84,7 +128,7 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
             order.setUserId(userId);
             order.setProductId(productId);
             order.setSeckillPrice(message.getSeckillPrice());
-            order.setStatus(0);
+            order.setStatus(STATUS_CREATED);
             seckillOrderMapper.insert(order);
 
             stringRedisTemplate.opsForValue().set(orderKey, String.valueOf(order.getId()), ttlSeconds, TimeUnit.SECONDS);
@@ -133,8 +177,10 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
         if (expireAt == null) {
             return DEFAULT_RESULT_TTL_SECONDS;
         }
-        long ttlSeconds = Duration.between(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant(),
-                expireAt.atZone(ZoneId.systemDefault()).toInstant()).getSeconds();
+        long ttlSeconds = Duration.between(
+                LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant(),
+                expireAt.atZone(ZoneId.systemDefault()).toInstant()
+        ).getSeconds();
         return Math.max(ttlSeconds, DEFAULT_RESULT_TTL_SECONDS);
     }
 }

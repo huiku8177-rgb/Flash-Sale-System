@@ -95,11 +95,32 @@ export function getProductPhaseType(product, now = Date.now()) {
 
 export function getOrderStatusText(status) {
   const mapping = {
-    0: "新建",
+    0: "待支付",
     1: "已支付",
-    2: "已取消"
+    2: "已取消",
+    3: "已发货",
+    4: "已完成"
   };
   return mapping[status] || `未知状态(${status})`;
+}
+
+export function getOrderStatusType(status) {
+  const mapping = {
+    0: "warning",
+    1: "success",
+    2: "info",
+    3: "primary",
+    4: "success"
+  };
+  return mapping[status] || "info";
+}
+
+export function getOrderTypeText(type) {
+  const mapping = {
+    normal: "普通订单",
+    seckill: "秒杀订单"
+  };
+  return mapping[type] || "订单";
 }
 
 function formatDuration(ms) {

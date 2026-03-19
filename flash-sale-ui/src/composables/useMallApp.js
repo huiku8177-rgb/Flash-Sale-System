@@ -1,36 +1,69 @@
 import { computed, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { fetchOrderDetail, fetchOrders } from "../api/order";
+import { fetchCurrentUser, updatePassword } from "../api/auth";
+import {
+  checkoutNormalOrder,
+  fetchNormalOrderDetail,
+  fetchNormalOrders,
+  fetchNormalPayStatus,
+  fetchSeckillOrderDetail,
+  fetchSeckillOrders,
+  fetchSeckillPayStatus,
+  payNormalOrder,
+  paySeckillOrder
+} from "../api/order";
 import { fetchProductDetail, fetchProducts } from "../api/product";
+import { createSeckill, fetchSeckillResult } from "../api/seckill";
 import {
   fetchSeckillProductDetail,
   fetchSeckillProducts
 } from "../api/seckillProduct";
-import { createSeckill, fetchSeckillResult } from "../api/seckill";
 import { authState } from "../stores/auth";
-import { getProductPhase } from "../utils/format";
+import { getOrderStatusText, getProductPhase } from "../utils/format";
 
 const CART_STORAGE_KEY = "flash-sale-cart";
+const CATEGORY_NAME_MAP = {
+  1: "休闲零食",
+  2: "数码办公",
+  3: "酒水饮料",
+  4: "家居百货",
+  5: "配件耗材",
+  6: "个护礼盒"
+};
 
 export function useMallApp() {
   const products = ref([]);
   const seckillProducts = ref([]);
-  const orders = ref([]);
+  const normalOrders = ref([]);
+  const seckillOrders = ref([]);
+  const profile = ref(null);
+
   const productsLoading = ref(false);
   const seckillProductsLoading = ref(false);
   const ordersLoading = ref(false);
+  const profileLoading = ref(false);
+  const checkoutLoading = ref(false);
   const productDetailLoading = ref(false);
   const orderDetailLoading = ref(false);
+
   const productDetailVisible = ref(false);
   const orderDialogVisible = ref(false);
   const productDetail = ref(null);
   const productDetailType = ref("normal");
   const selectedOrder = ref(null);
+  const selectedOrderType = ref("seckill");
+
   const currentTime = ref(Date.now());
   const productFilters = reactive({
     name: "",
     status: "",
     categoryId: null
+  });
+  const checkoutForm = reactive({
+    receiver: "",
+    mobile: "",
+    detail: "",
+    remark: ""
   });
   const seckillState = reactive({});
   const cartItems = ref(readCart());
@@ -39,25 +72,21 @@ export function useMallApp() {
   let ticker = null;
   let initialized = false;
 
-  const orderStats = computed(() => {
-    const stats = {
-      total: orders.value.length,
-      created: 0,
-      paid: 0,
-      cancelled: 0
-    };
-
-    orders.value.forEach((order) => {
-      if (order.status === 0) {
-        stats.created += 1;
-      } else if (order.status === 1) {
-        stats.paid += 1;
-      } else if (order.status === 2) {
-        stats.cancelled += 1;
+  const productCategories = computed(() => {
+    const groups = new Map();
+    for (const product of products.value) {
+      const categoryId = product.categoryId ?? 0;
+      if (!groups.has(categoryId)) {
+        groups.set(categoryId, {
+          id: categoryId,
+          label: getCategoryName(categoryId),
+          count: 0
+        });
       }
-    });
+      groups.get(categoryId).count += 1;
+    }
 
-    return stats;
+    return [...groups.values()].sort((left, right) => left.id - right.id);
   });
 
   const flashProducts = computed(() => {
@@ -96,6 +125,14 @@ export function useMallApp() {
     };
   });
 
+  const normalCartItems = computed(() =>
+    cartItems.value.filter((item) => item.productType === "normal")
+  );
+
+  const seckillCartItems = computed(() =>
+    cartItems.value.filter((item) => item.productType === "seckill")
+  );
+
   const cartSummary = computed(() => {
     return cartItems.value.reduce(
       (summary, item) => {
@@ -110,6 +147,60 @@ export function useMallApp() {
     );
   });
 
+  const checkoutSummary = computed(() => {
+    return normalCartItems.value.reduce(
+      (summary, item) => {
+        summary.count += item.quantity;
+        summary.total += Number(getCartItemPrice(item) ?? 0) * item.quantity;
+        return summary;
+      },
+      {
+        count: 0,
+        total: 0
+      }
+    );
+  });
+
+  const orders = computed(() => {
+    const merged = [
+      ...normalOrders.value.map((order) => normalizeOrder(order, "normal")),
+      ...seckillOrders.value.map((order) => normalizeOrder(order, "seckill"))
+    ];
+
+    return merged.sort((left, right) => {
+      return new Date(right.createTime || 0).getTime() - new Date(left.createTime || 0).getTime();
+    });
+  });
+
+  const recentOrders = computed(() => orders.value.slice(0, 3));
+
+  const orderStats = computed(() => {
+    const stats = {
+      total: orders.value.length,
+      created: 0,
+      paid: 0,
+      cancelled: 0,
+      normal: normalOrders.value.length,
+      seckill: seckillOrders.value.length
+    };
+
+    orders.value.forEach((order) => {
+      if (order.status === 0) {
+        stats.created += 1;
+      } else if (order.status === 1) {
+        stats.paid += 1;
+      } else if (order.status === 2) {
+        stats.cancelled += 1;
+      }
+    });
+
+    return stats;
+  });
+
+  const profileDisplayName = computed(() => {
+    return profile.value?.username || authState.username || "未登录用户";
+  });
+
   async function init() {
     if (!ticker) {
       ticker = window.setInterval(() => {
@@ -119,7 +210,12 @@ export function useMallApp() {
 
     if (!initialized) {
       initialized = true;
-      await Promise.all([loadProducts(), loadSeckillProducts(), loadOrders()]);
+      await Promise.all([
+        loadProfile(),
+        loadProducts(),
+        loadSeckillProducts(),
+        loadOrders()
+      ]);
     }
   }
 
@@ -133,12 +229,24 @@ export function useMallApp() {
     pollingTimers.clear();
   }
 
+  async function loadProfile() {
+    profileLoading.value = true;
+    try {
+      profile.value = await fetchCurrentUser();
+    } catch (error) {
+      profile.value = null;
+      ElMessage.error(error.message);
+    } finally {
+      profileLoading.value = false;
+    }
+  }
+
   async function loadProducts() {
     productsLoading.value = true;
     try {
       products.value = await fetchProducts({
         name: productFilters.name || undefined,
-        status: productFilters.status === "" ? undefined : productFilters.status,
+        status: productFilters.status === "" ? undefined : Number(productFilters.status),
         categoryId: productFilters.categoryId || undefined
       });
       syncCartSnapshots();
@@ -164,7 +272,12 @@ export function useMallApp() {
   async function loadOrders() {
     ordersLoading.value = true;
     try {
-      orders.value = await fetchOrders();
+      const [normal, seckill] = await Promise.all([
+        fetchNormalOrders(),
+        fetchSeckillOrders()
+      ]);
+      normalOrders.value = normal;
+      seckillOrders.value = seckill;
     } catch (error) {
       ElMessage.error(error.message);
     } finally {
@@ -173,7 +286,24 @@ export function useMallApp() {
   }
 
   async function refreshMallData() {
-    await Promise.all([loadProducts(), loadSeckillProducts(), loadOrders()]);
+    await Promise.all([
+      loadProfile(),
+      loadProducts(),
+      loadSeckillProducts(),
+      loadOrders()
+    ]);
+  }
+
+  function applyCategoryFilter(categoryId) {
+    productFilters.categoryId = categoryId;
+    loadProducts();
+  }
+
+  function clearProductFilters() {
+    productFilters.name = "";
+    productFilters.status = "";
+    productFilters.categoryId = null;
+    loadProducts();
   }
 
   async function openProduct(product, type = inferProductType(product)) {
@@ -194,11 +324,18 @@ export function useMallApp() {
     }
   }
 
-  async function openOrder(orderId) {
+  async function openOrder(orderOrId, explicitType = null) {
+    const orderRef = normalizeOrderRef(orderOrId, explicitType);
     orderDialogVisible.value = true;
     orderDetailLoading.value = true;
+    selectedOrderType.value = orderRef.orderType;
+
     try {
-      selectedOrder.value = await fetchOrderDetail(orderId);
+      const order =
+        orderRef.orderType === "normal"
+          ? await fetchNormalOrderDetail(orderRef.id)
+          : await fetchSeckillOrderDetail(orderRef.id);
+      selectedOrder.value = normalizeOrder(order, orderRef.orderType);
     } catch (error) {
       ElMessage.error(error.message);
     } finally {
@@ -290,9 +427,9 @@ export function useMallApp() {
           state.status = "success";
           state.message = `${result.message}，订单号 ${result.orderId}`;
           ElMessage.success(state.message);
-          await loadOrders();
+          await Promise.all([loadOrders(), loadSeckillProducts()]);
           if (result.orderId) {
-            await openOrder(result.orderId);
+            await openOrder(result.orderId, "seckill");
           }
           return;
         }
@@ -300,6 +437,7 @@ export function useMallApp() {
         state.status = "failed";
         state.message = result.message;
         ElMessage.error(result.message);
+        await loadSeckillProducts();
       } catch (error) {
         stopPolling(productId);
         const state = ensureSeckillState(productId);
@@ -330,7 +468,7 @@ export function useMallApp() {
       cartItems.value.unshift(createCartItem(product, type));
     }
     persistCart();
-    ElMessage.success("已加入购物车草案");
+    ElMessage.success(type === "normal" ? "已加入普通商品购物车" : "已加入秒杀商品草案");
   }
 
   function updateCartQuantity(cartKey, delta) {
@@ -358,6 +496,132 @@ export function useMallApp() {
     return item.displayPrice ?? item.seckillPrice ?? item.price ?? 0;
   }
 
+  async function checkoutNormalCart() {
+    if (!normalCartItems.value.length) {
+      ElMessage.warning("购物车里还没有普通商品");
+      return;
+    }
+
+    const addressSnapshot = buildAddressSnapshot();
+    if (addressSnapshot === false) {
+      return;
+    }
+
+    checkoutLoading.value = true;
+    try {
+      const order = await checkoutNormalOrder({
+        items: normalCartItems.value.map((item) => ({
+          productId: item.id,
+          quantity: item.quantity
+        })),
+        remark: checkoutForm.remark || undefined,
+        addressSnapshot: addressSnapshot || undefined
+      });
+
+      cartItems.value = cartItems.value.filter((item) => item.productType !== "normal");
+      persistCart();
+      clearCheckoutForm();
+      ElMessage.success(`普通订单创建成功，订单号 ${order.orderNo}`);
+      await Promise.all([loadProducts(), loadOrders()]);
+      await openOrder(order, "normal");
+    } catch (error) {
+      ElMessage.error(error.message);
+    } finally {
+      checkoutLoading.value = false;
+    }
+  }
+
+  async function payOrder(order) {
+    const normalized = normalizeOrder(order, order.orderType);
+    try {
+      const paidOrder =
+        normalized.orderType === "normal"
+          ? await payNormalOrder(normalized.id)
+          : await paySeckillOrder(normalized.id);
+
+      ElMessage.success(
+        normalized.orderType === "normal" ? "普通订单已模拟支付" : "秒杀订单已模拟支付"
+      );
+      await loadOrders();
+
+      if (selectedOrder.value?.id === normalized.id && selectedOrder.value?.orderType === normalized.orderType) {
+        selectedOrder.value = normalizeOrder(paidOrder, normalized.orderType);
+      }
+      return paidOrder;
+    } catch (error) {
+      ElMessage.error(error.message);
+      throw error;
+    }
+  }
+
+  async function fetchAndToastPayStatus(order) {
+    const normalized = normalizeOrder(order, order.orderType);
+    try {
+      const payStatus =
+        normalized.orderType === "normal"
+          ? await fetchNormalPayStatus(normalized.id)
+          : await fetchSeckillPayStatus(normalized.id);
+      ElMessage.info(payStatus.message || "已获取支付状态");
+      return payStatus;
+    } catch (error) {
+      ElMessage.error(error.message);
+      throw error;
+    }
+  }
+
+  async function submitPasswordUpdate(passwordForm) {
+    if (!passwordForm.oldPassword || !passwordForm.newPassword) {
+      ElMessage.warning("请补全旧密码和新密码");
+      return false;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      ElMessage.warning("两次输入的新密码不一致");
+      return false;
+    }
+
+    try {
+      await updatePassword({
+        oldPassword: passwordForm.oldPassword,
+        newPassword: passwordForm.newPassword
+      });
+      ElMessage.success("密码修改成功");
+      return true;
+    } catch (error) {
+      ElMessage.error(error.message);
+      return false;
+    }
+  }
+
+  function getOrderDisplayAmount(order) {
+    return Number(order.displayAmount ?? order.payAmount ?? order.totalAmount ?? order.seckillPrice ?? 0);
+  }
+
+  function isOrderPayable(order) {
+    return normalizeOrder(order, order.orderType).status === 0;
+  }
+
+  function getOrderSummary(order) {
+    const normalized = normalizeOrder(order, order.orderType);
+    if (normalized.orderType === "normal") {
+      return normalized.items?.map((item) => item.productName).join("、") || "普通商品订单";
+    }
+    return `秒杀商品 ${normalized.productId}`;
+  }
+
+  function getAddressSummary(order) {
+    const snapshot = order.addressSnapshot;
+    if (!snapshot) {
+      return "未填写收货地址";
+    }
+
+    try {
+      const address = typeof snapshot === "string" ? JSON.parse(snapshot) : snapshot;
+      return [address.receiver, address.mobile, address.detail].filter(Boolean).join(" · ");
+    } catch {
+      return snapshot;
+    }
+  }
+
   function syncCartSnapshots() {
     const normalProductMap = new Map(products.value.map((product) => [product.id, product]));
     const seckillProductMap = new Map(
@@ -383,14 +647,50 @@ export function useMallApp() {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems.value));
   }
 
+  function clearCheckoutForm() {
+    checkoutForm.receiver = "";
+    checkoutForm.mobile = "";
+    checkoutForm.detail = "";
+    checkoutForm.remark = "";
+  }
+
+  function buildAddressSnapshot() {
+    const receiver = checkoutForm.receiver.trim();
+    const mobile = checkoutForm.mobile.trim();
+    const detail = checkoutForm.detail.trim();
+    const hasAny = Boolean(receiver || mobile || detail);
+    const hasAll = Boolean(receiver && mobile && detail);
+
+    if (!hasAny) {
+      return null;
+    }
+
+    if (!hasAll) {
+      ElMessage.warning("收货人、手机号和地址请一起填写");
+      return false;
+    }
+
+    return JSON.stringify({
+      receiver,
+      mobile,
+      detail
+    });
+  }
+
   return {
     authState,
+    profile,
+    profileLoading,
     products,
     seckillProducts,
+    normalOrders,
+    seckillOrders,
     orders,
+    recentOrders,
     productsLoading,
     seckillProductsLoading,
     ordersLoading,
+    checkoutLoading,
     productDetailLoading,
     orderDetailLoading,
     productDetailVisible,
@@ -398,20 +698,30 @@ export function useMallApp() {
     productDetail,
     productDetailType,
     selectedOrder,
+    selectedOrderType,
     currentTime,
     productFilters,
+    productCategories,
     cartItems,
+    normalCartItems,
+    seckillCartItems,
     featuredNormalProducts,
     homeShelves,
     flashProducts,
     cartSummary,
+    checkoutSummary,
     orderStats,
+    checkoutForm,
+    profileDisplayName,
     init,
     dispose,
+    loadProfile,
     loadProducts,
     loadSeckillProducts,
     loadOrders,
     refreshMallData,
+    applyCategoryFilter,
+    clearProductFilters,
     openProduct,
     openOrder,
     getProductCardState,
@@ -421,7 +731,16 @@ export function useMallApp() {
     updateCartQuantity,
     removeFromCart,
     isInCart,
-    getCartItemPrice
+    getCartItemPrice,
+    checkoutNormalCart,
+    payOrder,
+    fetchAndToastPayStatus,
+    submitPasswordUpdate,
+    getOrderDisplayAmount,
+    isOrderPayable,
+    getOrderSummary,
+    getAddressSummary,
+    getOrderStatusText
   };
 }
 
@@ -462,4 +781,50 @@ function createCartItem(product, type) {
     detail: product.detail ?? "",
     quantity: 1
   };
+}
+
+function normalizeOrder(order, explicitType = null) {
+  if (!order) {
+    return null;
+  }
+
+  const orderType = explicitType || inferOrderType(order);
+  const status = order.orderStatus ?? order.status ?? 0;
+  const displayAmount =
+    orderType === "normal"
+      ? Number(order.payAmount ?? order.totalAmount ?? 0)
+      : Number(order.seckillPrice ?? 0);
+
+  return {
+    ...order,
+    orderType,
+    status,
+    displayAmount
+  };
+}
+
+function normalizeOrderRef(orderOrId, explicitType) {
+  if (typeof orderOrId === "object" && orderOrId !== null) {
+    return {
+      id: orderOrId.id,
+      orderType: explicitType || inferOrderType(orderOrId)
+    };
+  }
+
+  return {
+    id: orderOrId,
+    orderType: explicitType || "seckill"
+  };
+}
+
+function inferOrderType(order) {
+  return Object.prototype.hasOwnProperty.call(order, "orderNo") ||
+    Object.prototype.hasOwnProperty.call(order, "orderStatus") ||
+    Array.isArray(order.items)
+    ? "normal"
+    : "seckill";
+}
+
+function getCategoryName(categoryId) {
+  return CATEGORY_NAME_MAP[categoryId] || `分类 ${categoryId}`;
 }

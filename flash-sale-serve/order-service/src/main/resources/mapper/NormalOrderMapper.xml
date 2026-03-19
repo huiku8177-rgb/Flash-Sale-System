@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.flashsale.orderservice.mapper.NormalOrderMapper">
+
+    <resultMap id="NormalOrderVOResultMap" type="com.flashsale.orderservice.domain.vo.NormalOrderVO">
+        <id property="id" column="id"/>
+        <result property="orderNo" column="order_no"/>
+        <result property="userId" column="user_id"/>
+        <result property="orderStatus" column="order_status"/>
+        <result property="totalAmount" column="total_amount"/>
+        <result property="payAmount" column="pay_amount"/>
+        <result property="payTime" column="pay_time"/>
+        <result property="remark" column="remark"/>
+        <result property="addressSnapshot" column="address_snapshot"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <sql id="BaseNormalOrderColumns">
+        id,
+        order_no,
+        user_id,
+        order_status,
+        total_amount,
+        pay_amount,
+        pay_time,
+        remark,
+        address_snapshot,
+        create_time
+    </sql>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" parameterType="com.flashsale.orderservice.domain.po.NormalOrderPO">
+        INSERT INTO normal_order (
+            order_no,
+            user_id,
+            order_status,
+            total_amount,
+            pay_amount,
+            pay_time,
+            remark,
+            address_snapshot
+        ) VALUES (
+            #{orderNo},
+            #{userId},
+            #{orderStatus},
+            #{totalAmount},
+            #{payAmount},
+            #{payTime},
+            #{remark},
+            #{addressSnapshot}
+        )
+    </insert>
+
+    <select id="listOrders" resultMap="NormalOrderVOResultMap">
+        SELECT
+        <include refid="BaseNormalOrderColumns"/>
+        FROM normal_order
+        WHERE user_id = #{userId}
+        <if test="orderStatus != null">
+            AND order_status = #{orderStatus}
+        </if>
+        ORDER BY create_time DESC, id DESC
+    </select>
+
+    <select id="getOrderDetail" resultMap="NormalOrderVOResultMap">
+        SELECT
+        <include refid="BaseNormalOrderColumns"/>
+        FROM normal_order
+        WHERE user_id = #{userId}
+          AND id = #{id}
+        LIMIT 1
+    </select>
+
+    <update id="updatePayStatus">
+        UPDATE normal_order
+        SET order_status = #{targetStatus},
+            pay_amount = #{payAmount},
+            pay_time = #{payTime}
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND order_status = #{expectedStatus}
+    </update>
+</mapper>

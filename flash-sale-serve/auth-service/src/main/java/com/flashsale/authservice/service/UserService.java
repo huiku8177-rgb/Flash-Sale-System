@@ -9,4 +9,8 @@ public interface UserService {
     Result<UserVO> login(UserDTO userDTO);
 
     Result<Void> register(UserDTO userDTO);
+
+    UserVO getUserInfo(Long userId);
+
+    Result<Void> updatePassword(Long userId, UserDTO userDTO);
 }

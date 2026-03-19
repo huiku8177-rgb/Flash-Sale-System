@@ -3,9 +3,11 @@ package com.flashsale.seckillservice.service.impl;
 import com.flashsale.common.domain.Result;
 import com.flashsale.common.redis.RedisKeys;
 import com.flashsale.seckillservice.domain.dto.SeckillRequestDTO;
+import com.flashsale.seckillservice.domain.po.SeckillOrderPO;
 import com.flashsale.seckillservice.domain.po.SeckillProductPO;
 import com.flashsale.seckillservice.domain.vo.SeckillResultVO;
 import com.flashsale.seckillservice.domain.vo.SeckillStatusVO;
+import com.flashsale.seckillservice.mapper.SeckillMapper;
 import com.flashsale.seckillservice.mapper.SeckillProductMapper;
 import com.flashsale.seckillservice.mq.SeckillProducer;
 import com.flashsale.seckillservice.mq.message.SeckillMessage;
@@ -23,22 +25,15 @@ import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description SeckillServiceImpl
- * @date 2026/3/13 17:00
- */
 @Service
 @Slf4j
 public class SeckillServiceImpl implements SeckillService {
 
-    /** 活动结束后额外保留结果缓存的缓冲时长（秒）。 */
     private static final long RESULT_BUFFER_SECONDS = 600L;
-    /** 结果缓存兜底 TTL（秒）。 */
     private static final long DEFAULT_RESULT_TTL_SECONDS = 3600L;
 
     private final SeckillProductMapper seckillProductMapper;
+    private final SeckillMapper seckillMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final DefaultRedisScript<Long> seckillScript;
     private final DefaultRedisScript<Long> seckillRollbackScript;
@@ -46,20 +41,19 @@ public class SeckillServiceImpl implements SeckillService {
 
     public SeckillServiceImpl(
             SeckillProductMapper seckillProductMapper,
+            SeckillMapper seckillMapper,
             StringRedisTemplate stringRedisTemplate,
             @Qualifier("seckillScript") DefaultRedisScript<Long> seckillScript,
             @Qualifier("seckillRollbackScript") DefaultRedisScript<Long> seckillRollbackScript,
             SeckillProducer seckillProducer) {
         this.seckillProductMapper = seckillProductMapper;
+        this.seckillMapper = seckillMapper;
         this.stringRedisTemplate = stringRedisTemplate;
         this.seckillScript = seckillScript;
         this.seckillRollbackScript = seckillRollbackScript;
         this.seckillProducer = seckillProducer;
     }
 
-    /**
-     * 秒杀入口：完成参数/活动校验、Lua 原子扣减、写入 PROCESSING 状态并异步投递 MQ。
-     */
     @Override
     public Result<SeckillResultVO> seckill(SeckillRequestDTO requestDTO) {
         Long productId = requestDTO.getProductId();
@@ -148,7 +142,7 @@ public class SeckillServiceImpl implements SeckillService {
                     String.valueOf(userId)
             );
             stringRedisTemplate.opsForValue().set(resultKey, "FAIL", DEFAULT_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
-            log.error("发送秒杀MQ失败，已回滚Redis库存和用户标记，messageId={}", sm.getMessageId(), e);
+            log.error("发送秒杀 MQ 失败，已回滚 Redis 库存和用户标记，messageId={}", sm.getMessageId(), e);
             result.setSuccess(false);
             result.setMessage("系统繁忙，请稍后重试");
             return Result.success(result);
@@ -159,9 +153,6 @@ public class SeckillServiceImpl implements SeckillService {
         return Result.success(result);
     }
 
-    /**
-     * 获取秒杀结果
-     */
     @Override
     public Result<SeckillStatusVO> getSeckillResult(Long userId, Long productId) {
         SeckillStatusVO result = new SeckillStatusVO();
@@ -174,7 +165,6 @@ public class SeckillServiceImpl implements SeckillService {
 
         String orderKey = RedisKeys.seckillOrder(userId, productId);
         String orderIdStr = stringRedisTemplate.opsForValue().get(orderKey);
-
         if (orderIdStr != null) {
             result.setStatus(1);
             result.setMessage("秒杀成功");
@@ -201,6 +191,24 @@ public class SeckillServiceImpl implements SeckillService {
         if (Boolean.TRUE.equals(exists)) {
             result.setStatus(0);
             result.setMessage("排队中");
+            return Result.success(result);
+        }
+
+        // Redis 结果过期后，仍需回查数据库订单，避免真实成功被误判为失败。
+        SeckillOrderPO order = seckillMapper.getOrderByUserIdAndProductId(userId, productId);
+        if (order != null) {
+            if (order.getStatus() != null && order.getStatus() == 2) {
+                result.setStatus(-1);
+                result.setMessage("秒杀订单已取消");
+                return Result.success(result);
+            }
+            stringRedisTemplate.opsForValue().set(orderKey, String.valueOf(order.getId()),
+                    DEFAULT_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
+            stringRedisTemplate.opsForValue().set(resultKey, "SUCCESS",
+                    DEFAULT_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
+            result.setStatus(1);
+            result.setMessage("秒杀成功");
+            result.setOrderId(order.getId());
             return Result.success(result);
         }
 

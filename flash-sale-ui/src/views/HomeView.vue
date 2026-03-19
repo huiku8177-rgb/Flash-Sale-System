@@ -5,22 +5,17 @@ import { formatCurrency } from "../utils/format";
 
 const mallApp = inject("mallApp");
 const router = useRouter();
-const visibleCount = ref(4);
+const visibleCount = ref(6);
 const loadMoreAnchor = ref(null);
 let observer = null;
 
-const categoryEntries = [
-  "新品推荐",
-  "电脑数码",
-  "生活电器",
-  "休闲零食",
-  "办公外设",
-  "家居百货",
-  "箱包配件",
-  "健康个护",
-  "潮流配饰",
-  "更多频道"
-];
+const categoryEntries = computed(() => {
+  return mallApp.productCategories.length
+    ? mallApp.productCategories
+    : [
+        { id: null, label: "全部商品", count: mallApp.products.length }
+      ];
+});
 
 const bannerProducts = computed(() => {
   const seckillItems = [...mallApp.seckillProducts].filter(
@@ -30,65 +25,53 @@ const bannerProducts = computed(() => {
   if (!seckillItems.length) {
     return [
       {
-        id: "price-hero",
-        title: "高价主推秒杀",
-        subtitle: "主推位",
-        copy: "轮播首位默认展示秒杀价最高的商品，首页点击后直接进入闪购区。",
-        accent: "High Price",
-        metricLabel: "秒杀价",
-        metricValue: "--"
-      },
-      {
-        id: "stock-hero",
-        title: "高库存稳定供给",
-        subtitle: "稳定供给",
-        copy: "第二张轮播默认展示库存最高的秒杀商品，优先承接可立即购买的流量。",
-        accent: "High Stock",
-        metricLabel: "库存",
-        metricValue: "--"
+        id: "flash-banner",
+        title: "秒杀会场已就绪",
+        subtitle: "Flash Sale",
+        copy: "秒杀商品、异步下单、支付状态查询都已经接入，点击后可直接进入秒杀页面。",
+        accent: "会场入口",
+        metricLabel: "当前商品",
+        metricValue: "0"
       }
     ];
   }
 
-  const priceHero = [...seckillItems].sort(
+  const hottest = [...seckillItems].sort(
     (left, right) => Number(right.seckillPrice ?? 0) - Number(left.seckillPrice ?? 0)
   )[0];
-
-  const stockHero =
+  const richest =
     [...seckillItems]
       .sort((left, right) => Number(right.stock ?? 0) - Number(left.stock ?? 0))
-      .find((product) => product.id !== priceHero.id) ?? priceHero;
+      .find((product) => product.id !== hottest.id) ?? hottest;
 
   return [
     {
-      id: priceHero.id,
-      title: priceHero.name,
-      subtitle: "主推位",
-      copy: "主推位固定选择秒杀价最高的商品，优先把用户导向更强冲击力的闪购单品。",
+      id: hottest.id,
+      title: hottest.name,
+      subtitle: "高客单秒杀",
+      copy: "优先展示秒杀价更高的商品，让首页可以直接把用户引导到冲击力更强的活动位。",
       accent: "High Price",
       metricLabel: "秒杀价",
-      metricValue: formatCurrency(priceHero.seckillPrice)
+      metricValue: formatCurrency(hottest.seckillPrice)
     },
     {
-      id: stockHero.id,
-      title: stockHero.name,
+      id: richest.id,
+      title: richest.name,
       subtitle: "稳定供给",
-      copy: "稳定供给位固定选择库存最高的商品，降低用户点进后秒空的概率。",
+      copy: "库存更充足的秒杀商品适合作为会场承接位，减少点进来后立刻抢空的概率。",
       accent: "High Stock",
-      metricLabel: "库存",
-      metricValue: `${stockHero.stock}`
+      metricLabel: "剩余库存",
+      metricValue: `${richest.stock}`
     }
   ];
 });
 
 const visibleProducts = computed(() => {
-  const products = mallApp.featuredNormalProducts || [];
-  return products.slice(0, visibleCount.value);
+  return (mallApp.featuredNormalProducts || []).slice(0, visibleCount.value);
 });
 
 const hasMoreProducts = computed(() => {
-  const total = (mallApp.featuredNormalProducts || []).length;
-  return visibleCount.value < total;
+  return visibleCount.value < (mallApp.featuredNormalProducts || []).length;
 });
 
 function goFlash() {
@@ -100,7 +83,15 @@ function loadMoreProducts() {
   if (visibleCount.value >= total) {
     return;
   }
-  visibleCount.value = Math.min(visibleCount.value + 4, total);
+  visibleCount.value = Math.min(visibleCount.value + 6, total);
+}
+
+function applyCategory(categoryId) {
+  if (categoryId === null) {
+    mallApp.clearProductFilters();
+    return;
+  }
+  mallApp.applyCategoryFilter(categoryId);
 }
 
 function setupObserver() {
@@ -110,8 +101,7 @@ function setupObserver() {
 
   observer = new IntersectionObserver(
     (entries) => {
-      const [entry] = entries;
-      if (entry?.isIntersecting) {
+      if (entries[0]?.isIntersecting) {
         loadMoreProducts();
       }
     },
@@ -128,7 +118,7 @@ function setupObserver() {
 watch(
   () => (mallApp.featuredNormalProducts || []).length,
   () => {
-    visibleCount.value = 4;
+    visibleCount.value = 6;
     observer?.disconnect();
     observer = null;
     setTimeout(() => setupObserver(), 0);
@@ -150,17 +140,28 @@ onBeforeUnmount(() => {
     <section class="home-hero-layout">
       <aside class="category-board">
         <div class="category-board-head">
-          <strong>商品服务分类</strong>
-          <span>桌面站导航</span>
+          <strong>商品分类</strong>
+          <span>按普通商品分类快速筛选</span>
         </div>
         <button
-          v-for="entry in categoryEntries"
-          :key="entry"
           type="button"
           class="category-link"
-          @click="mallApp.productFilters.name = entry; mallApp.loadProducts()"
+          :class="{ active: mallApp.productFilters.categoryId === null }"
+          @click="mallApp.clearProductFilters"
         >
-          {{ entry }}
+          <span>全部商品</span>
+          <small>{{ mallApp.products.length }}</small>
+        </button>
+        <button
+          v-for="entry in categoryEntries"
+          :key="entry.id ?? 'all'"
+          type="button"
+          class="category-link"
+          :class="{ active: mallApp.productFilters.categoryId === entry.id }"
+          @click="applyCategory(entry.id)"
+        >
+          <span>{{ entry.label }}</span>
+          <small>{{ entry.count }}</small>
         </button>
       </aside>
 
@@ -173,7 +174,7 @@ onBeforeUnmount(() => {
                 <h2>{{ banner.title }}</h2>
                 <p>{{ banner.copy }}</p>
                 <div class="desktop-banner-actions">
-                  <el-button type="danger" @click.stop="goFlash">进入闪购</el-button>
+                  <el-button type="danger" @click.stop="goFlash">进入秒杀会场</el-button>
                   <el-button @click.stop="mallApp.loadSeckillProducts">刷新秒杀商品</el-button>
                 </div>
               </div>
@@ -186,47 +187,121 @@ onBeforeUnmount(() => {
           </el-carousel-item>
         </el-carousel>
 
-        <section class="section-card home-feature-section">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Featured Goods</p>
-              <h3>普通商品精选</h3>
-            </div>
-            <el-button text @click="mallApp.loadProducts">刷新普通商品</el-button>
-          </div>
-
-          <div class="home-feature-grid">
-            <article
-              v-for="product in visibleProducts"
-              :key="product.id"
-              class="desktop-product-card home-feature-card"
-            >
-              <div class="desktop-product-thumb">{{ product.name.slice(0, 2) }}</div>
-              <div class="home-feature-copy">
-                <span class="eyebrow">库存 {{ product.stock }}</span>
-                <h4>{{ product.name }}</h4>
-                <p>{{ product.subtitle || "首页普通商品默认展示卡片" }}</p>
-              </div>
-              <div class="desktop-price-row">
-                <strong>{{ formatCurrency(product.price) }}</strong>
-                <span>{{ formatCurrency(product.marketPrice) }}</span>
-              </div>
-              <div class="desktop-card-actions">
-                <el-button text @click="mallApp.openProduct(product, 'normal')">查看详情</el-button>
-                <el-button round @click="mallApp.addToCart(product, 'normal')">加入购物车</el-button>
-              </div>
-            </article>
-          </div>
-
-          <div
-            v-if="hasMoreProducts"
-            ref="loadMoreAnchor"
-            class="home-feature-footer"
-          >
-            <span>下滑自动加载更多商品</span>
-          </div>
+        <section class="desktop-shortcuts">
+          <article class="shortcut-card shortcut-orange">
+            <span>普通商品</span>
+            <strong>{{ mallApp.products.length }}</strong>
+            <small>支持列表、详情、加入购物车、下单和模拟支付。</small>
+          </article>
+          <article class="shortcut-card shortcut-blue">
+            <span>秒杀商品</span>
+            <strong>{{ mallApp.seckillProducts.length }}</strong>
+            <small>支持秒杀请求、轮询结果、异步建单和模拟支付。</small>
+          </article>
+          <article class="shortcut-card shortcut-green">
+            <span>待支付订单</span>
+            <strong>{{ mallApp.orderStats.created }}</strong>
+            <small>普通订单和秒杀订单都能在个人中心继续完成支付。</small>
+          </article>
         </section>
       </div>
+    </section>
+
+    <section class="section-card home-shelf-section">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Featured Goods</p>
+          <h3>普通商品精选</h3>
+        </div>
+        <div class="section-actions">
+          <el-button text @click="mallApp.clearProductFilters">清空筛选</el-button>
+          <el-button text @click="mallApp.loadProducts">刷新商品</el-button>
+        </div>
+      </div>
+
+      <div class="desktop-product-grid">
+        <article
+          v-for="product in visibleProducts"
+          :key="product.id"
+          class="desktop-product-card"
+        >
+          <div class="desktop-product-thumb">{{ product.name.slice(0, 2) }}</div>
+          <div class="product-card-topline">
+            <el-tag size="small" effect="plain">{{ product.categoryName || "普通商品" }}</el-tag>
+            <span>库存 {{ product.stock }}</span>
+          </div>
+          <h4>{{ product.name }}</h4>
+          <p>{{ product.subtitle || "适合作为商城首页推荐位的普通商品卡片。" }}</p>
+          <div class="desktop-price-row">
+            <strong>{{ formatCurrency(product.price) }}</strong>
+            <span>{{ formatCurrency(product.marketPrice) }}</span>
+          </div>
+          <div class="desktop-card-actions">
+            <el-button text @click="mallApp.openProduct(product, 'normal')">查看详情</el-button>
+            <el-button round @click="mallApp.addToCart(product, 'normal')">加入购物车</el-button>
+          </div>
+        </article>
+      </div>
+
+      <div v-if="hasMoreProducts" ref="loadMoreAnchor" class="home-feature-footer">
+        <span>继续下滑可自动加载更多普通商品</span>
+      </div>
+    </section>
+
+    <section class="home-dual-grid">
+      <section class="section-card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Quick Checkout</p>
+            <h3>购物车概览</h3>
+          </div>
+          <el-button text @click="router.push({ name: 'app-cart' })">去结算</el-button>
+        </div>
+        <div class="home-metric-grid">
+          <div class="home-metric-card">
+            <span>购物车商品数</span>
+            <strong>{{ mallApp.cartSummary.count }}</strong>
+          </div>
+          <div class="home-metric-card">
+            <span>普通商品待结算</span>
+            <strong>{{ formatCurrency(mallApp.checkoutSummary.total) }}</strong>
+          </div>
+          <div class="home-metric-card">
+            <span>秒杀草稿数</span>
+            <strong>{{ mallApp.seckillCartItems.length }}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Flash Preview</p>
+            <h3>秒杀抢购预览</h3>
+          </div>
+          <el-button text @click="goFlash">进入会场</el-button>
+        </div>
+        <div class="preview-stack">
+          <article
+            v-for="product in mallApp.flashProducts.slice(0, 3)"
+            :key="product.id"
+            class="preview-card"
+          >
+            <div>
+              <strong>{{ product.name }}</strong>
+              <small>秒杀价 {{ formatCurrency(product.seckillPrice) }}</small>
+            </div>
+            <el-button type="danger" plain @click="mallApp.openProduct(product, 'seckill')">
+              详情
+            </el-button>
+          </article>
+          <el-empty
+            v-if="!mallApp.flashProducts.length && !mallApp.seckillProductsLoading"
+            description="暂无秒杀商品"
+            :image-size="80"
+          />
+        </div>
+      </section>
     </section>
   </div>
 </template>

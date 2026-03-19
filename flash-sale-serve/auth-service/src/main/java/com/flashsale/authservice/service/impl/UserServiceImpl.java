@@ -13,71 +13,110 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description UserServiceImpl
- * @date 2026/3/12 10:25
- */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
-    /** 用户数据访问层：负责用户查询/新增。 */
     private final UserMapper userMapper;
-    /** JWT 工具：负责 token 签发。 */
     private final JwtTool jwtTool;
-    /** JWT 配置：读取 tokenTTL 等配置项。 */
     private final JwtProperties jwtProperties;
-    /** 密码编码器：BCrypt 加密与校验。 */
     private final PasswordEncoder passwordEncoder;
-
 
     @Override
     public Result<UserVO> login(UserDTO userDTO) {
+        if (!isValidCredential(userDTO)) {
+            return Result.error(ResultCode.PARAM_ERROR, "用户名或密码不能为空");
+        }
+
         log.info("用户登录: {}", userDTO.getUsername());
-
-        // 1) 按用户名查询账户
         User user = userMapper.findByUsername(userDTO.getUsername());
-        if (user == null) {
+        if (user == null || !passwordEncoder.matches(userDTO.getPassword(), user.getPassword())) {
             return Result.error(ResultCode.UNAUTHORIZED);
         }
 
-        // 2) 使用 BCrypt 校验密码
-        if (!passwordEncoder.matches(userDTO.getPassword(), user.getPassword())) {
-            return Result.error(ResultCode.UNAUTHORIZED);
-        }
-
-        // 3) 签发 JWT token
         String token = jwtTool.createToken(user.getId(), jwtProperties.getTokenTTL());
-
-        // 4) 组装返回对象
         UserVO userVO = new UserVO();
         userVO.setUserId(user.getId().intValue());
         userVO.setUsername(user.getUsername());
         userVO.setToken(token);
-
         return Result.success(userVO);
     }
 
     @Override
-    public Result register(UserDTO userDTO) {
-        log.info("用户注册: {}", userDTO.getUsername());
+    public Result<Void> register(UserDTO userDTO) {
+        if (!isValidCredential(userDTO)) {
+            return Result.error(ResultCode.PARAM_ERROR, "用户名或密码不能为空");
+        }
 
-        // 1) 用户名唯一性校验
+        log.info("用户注册: {}", userDTO.getUsername());
         User oldUser = userMapper.findByUsername(userDTO.getUsername());
         if (oldUser != null) {
             return Result.error(ResultCode.BUSINESS_ERROR, "用户名已存在");
         }
 
-        // 2) 密码加密后入库
         User user = new User();
         user.setUsername(userDTO.getUsername());
         user.setPassword(passwordEncoder.encode(userDTO.getPassword()));
-
         userMapper.insert(user);
         return Result.success();
+    }
+
+    @Override
+    public UserVO getUserInfo(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+
+        User user = userMapper.findById(userId);
+        if (user == null) {
+            return null;
+        }
+
+        UserVO userVO = new UserVO();
+        userVO.setUserId(user.getId().intValue());
+        userVO.setUsername(user.getUsername());
+        return userVO;
+    }
+
+    @Override
+    public Result<Void> updatePassword(Long userId, UserDTO userDTO) {
+        if (userId == null) {
+            return Result.error(ResultCode.UNAUTHORIZED);
+        }
+        if (userDTO == null) {
+            return Result.error(ResultCode.PARAM_ERROR, "请求参数不能为空");
+        }
+        if (!StringUtils.hasText(userDTO.getOldPassword())) {
+            return Result.error(ResultCode.PARAM_ERROR, "旧密码不能为空");
+        }
+        if (!StringUtils.hasText(userDTO.getNewPassword())) {
+            return Result.error(ResultCode.PARAM_ERROR, "新密码不能为空");
+        }
+
+        User user = userMapper.findById(userId);
+        if (user == null) {
+            return Result.error(ResultCode.BUSINESS_ERROR, "用户不存在");
+        }
+        if (!passwordEncoder.matches(userDTO.getOldPassword(), user.getPassword())) {
+            return Result.error(ResultCode.BUSINESS_ERROR, "旧密码错误");
+        }
+        if (passwordEncoder.matches(userDTO.getNewPassword(), user.getPassword())) {
+            return Result.error(ResultCode.BUSINESS_ERROR, "新密码不能与旧密码相同");
+        }
+
+        // 只允许基于当前登录用户和正确旧密码更新密码，避免越权或误改。
+        user.setPassword(passwordEncoder.encode(userDTO.getNewPassword()));
+        userMapper.updateUser(user);
+        log.info("用户修改密码: userId={}", userId);
+        return Result.success();
+    }
+
+    private boolean isValidCredential(UserDTO userDTO) {
+        return userDTO != null
+                && StringUtils.hasText(userDTO.getUsername())
+                && StringUtils.hasText(userDTO.getPassword());
     }
 }

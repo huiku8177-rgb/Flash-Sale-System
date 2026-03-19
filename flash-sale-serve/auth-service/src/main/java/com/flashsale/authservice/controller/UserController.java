@@ -4,69 +4,52 @@ import com.flashsale.authservice.domain.dto.UserDTO;
 import com.flashsale.authservice.domain.vo.UserVO;
 import com.flashsale.authservice.service.UserService;
 import com.flashsale.common.domain.Result;
+import com.flashsale.common.domain.ResultCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description UserController
- * @date 2026/3/11 16:44
- */
 @RestController
 @RequestMapping("/auth")
 @Slf4j
 public class UserController {
-    /**
-     * 认证业务入口：聚合登录/注册接口。
-     *
-     * 说明：Controller 只做参数接收与返回封装，核心逻辑下沉至 UserService。
-     */
+
     @Autowired
     private UserService userService;
 
-    /**
-     * 用户登录
-     * @param userDTO
-     * @return
-     */
     @PostMapping("/login")
-    public Result<UserVO> login(@RequestBody UserDTO userDTO){
-        // 登录成功后返回 userId、username 与 JWT token
+    public Result<UserVO> login(@RequestBody UserDTO userDTO) {
         return userService.login(userDTO);
     }
-    /**
-     * 用户注册
-     * @param userDTO
-     * @return
-     */
+
     @PostMapping("/register")
-    public Result register(@RequestBody UserDTO userDTO){
+    public Result<Void> register(@RequestBody UserDTO userDTO) {
         log.info("用户注册: {}", userDTO.getUsername());
-        // 注册流程：用户名唯一性校验 + 密码加密后入库（在 service 完成）
         return userService.register(userDTO);
     }
-    /**
-     * 用户登出
-     * @return
-     */
-    //TODO 用户登出
+
     @PostMapping("/logout")
-    public Result logout(){
-        return Result.success();
-    }
-    /**
-     * 获取当前用户信息
-     * @return
-     */
-    //TODO 获取当前用户信息
-    @PostMapping("/me")
-    public Result<UserVO> me(){
-        return Result.success();
+    public Result<String> logout() {
+        return Result.success("logout success");
     }
 
+    @GetMapping("/me")
+    public Result<UserVO> meByGet(@RequestHeader("X-User-Id") Long userId) {
+        return getCurrentUser(userId);
+    }
+
+    @PostMapping("/updatePassword")
+    public Result<Void> updatePassword(@RequestHeader("X-User-Id") Long userId,
+                                       @RequestBody UserDTO userDTO) {
+        return userService.updatePassword(userId, userDTO);
+    }
+
+    private Result<UserVO> getCurrentUser(Long userId) {
+        log.info("获取当前用户信息: {}", userId);
+        UserVO userVO = userService.getUserInfo(userId);
+        if (userVO == null) {
+            return Result.error(ResultCode.BUSINESS_ERROR, "用户不存在");
+        }
+        return Result.success(userVO);
+    }
 }

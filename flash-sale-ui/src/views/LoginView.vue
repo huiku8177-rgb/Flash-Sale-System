@@ -73,10 +73,9 @@ async function submitRegister() {
   <div class="auth-shell">
     <div class="auth-hero">
       <p class="eyebrow">Flash Sale System</p>
-      <h1>高并发秒杀控制台</h1>
+      <h1>商城前端联调入口</h1>
       <p class="hero-copy">
-        统一走你当前仓库的鉴权、秒杀与订单接口，页面已经适配
-        <code>Result&lt;T&gt;</code> 包装返回和秒杀轮询流程。
+        当前页面已经对接登录、注册、商品、秒杀、订单和个人中心接口，登录后可直接体验完整商城流程。
       </p>
       <div class="hero-metrics">
         <div>
@@ -85,7 +84,7 @@ async function submitRegister() {
         </div>
         <div>
           <span>核心交互</span>
-          <strong>登录、抢购、轮询、查单</strong>
+          <strong>登录、下单、轮询结果、支付、查状态</strong>
         </div>
       </div>
     </div>
@@ -125,7 +124,7 @@ async function submitRegister() {
               :loading="submitting"
               @click="submitLogin"
             >
-              登录并进入控制台
+              登录并进入商城
             </el-button>
           </el-form>
         </el-tab-pane>
@@ -144,7 +143,7 @@ async function submitRegister() {
                 v-model="registerForm.password"
                 type="password"
                 show-password
-                placeholder="至少 6 位更合适"
+                placeholder="输入登录密码"
                 size="large"
               />
             </el-form-item>

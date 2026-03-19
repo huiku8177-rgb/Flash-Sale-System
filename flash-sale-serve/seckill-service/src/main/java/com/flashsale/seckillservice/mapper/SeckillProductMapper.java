@@ -17,5 +17,5 @@ public interface SeckillProductMapper {
 
     List<SeckillProductPO> listAll();
 
-    SeckillProductPO getById(Long productId);
+    SeckillProductPO getById(@Param("id") Long productId);
 }

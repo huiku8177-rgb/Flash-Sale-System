@@ -14,3 +14,13 @@ export async function logout() {
   const response = await gatewayClient.post("/auth/logout");
   return response.data;
 }
+
+export async function fetchCurrentUser() {
+  const response = await gatewayClient.get("/auth/me");
+  return response.data.data;
+}
+
+export async function updatePassword(payload) {
+  const response = await gatewayClient.post("/auth/updatePassword", payload);
+  return response.data;
+}

@@ -23,4 +23,9 @@ public interface SeckillOrderMapper {
     void insert(SeckillOrderPO order);
 
     SeckillOrderPO getByUserIdAndProductId(@Param("userId") Long userId, @Param("productId") Long productId);
+
+    int updateStatus(@Param("id") Long id,
+                     @Param("userId") Long userId,
+                     @Param("expectedStatus") Integer expectedStatus,
+                     @Param("targetStatus") Integer targetStatus);
 }

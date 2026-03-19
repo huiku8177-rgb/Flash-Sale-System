@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.flashsale.orderservice.mapper.NormalOrderItemMapper">
+
+    <resultMap id="NormalOrderItemVOResultMap" type="com.flashsale.orderservice.domain.vo.NormalOrderItemVO">
+        <id property="id" column="id"/>
+        <result property="orderId" column="order_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="productId" column="product_id"/>
+        <result property="productName" column="product_name"/>
+        <result property="productSubtitle" column="product_subtitle"/>
+        <result property="productImage" column="product_image"/>
+        <result property="salePrice" column="sale_price"/>
+        <result property="quantity" column="quantity"/>
+        <result property="itemAmount" column="item_amount"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="insertBatch">
+        INSERT INTO normal_order_item (
+            order_id,
+            user_id,
+            product_id,
+            product_name,
+            product_subtitle,
+            product_image,
+            sale_price,
+            quantity,
+            item_amount
+        ) VALUES
+        <foreach collection="items" item="item" separator=",">
+            (
+                #{item.orderId},
+                #{item.userId},
+                #{item.productId},
+                #{item.productName},
+                #{item.productSubtitle},
+                #{item.productImage},
+                #{item.salePrice},
+                #{item.quantity},
+                #{item.itemAmount}
+            )
+        </foreach>
+    </insert>
+
+    <select id="listByOrderIds" resultMap="NormalOrderItemVOResultMap">
+        SELECT
+            id,
+            order_id,
+            user_id,
+            product_id,
+            product_name,
+            product_subtitle,
+            product_image,
+            sale_price,
+            quantity,
+            item_amount,
+            create_time
+        FROM normal_order_item
+        WHERE order_id IN
+        <foreach collection="orderIds" item="orderId" open="(" separator="," close=")">
+            #{orderId}
+        </foreach>
+        ORDER BY id ASC
+    </select>
+
+    <select id="listByOrderId" resultMap="NormalOrderItemVOResultMap">
+        SELECT
+            id,
+            order_id,
+            user_id,
+            product_id,
+            product_name,
+            product_subtitle,
+            product_image,
+            sale_price,
+            quantity,
+            item_amount,
+            create_time
+        FROM normal_order_item
+        WHERE order_id = #{orderId}
+        ORDER BY id ASC
+    </select>
+</mapper>
