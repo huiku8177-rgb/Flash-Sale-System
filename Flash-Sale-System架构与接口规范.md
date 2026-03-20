@@ -1,6 +1,6 @@
 # Flash-Sale-System 架构与接口规范
 
-> 版本：V2.0  
+> 版本：V3.0  
 > 状态：以当前仓库代码为准
 
 ## 1. 总体架构
@@ -9,13 +9,26 @@
 Browser
   -> Gateway
       -> auth-service
+      -> product-service
       -> seckill-service
       -> order-service
-  -> MySQL
-  -> Redis
+
+product-service
+  -> OpenFeign
+      -> order-service (/internal/orders/normal)
+
+seckill-service
+  -> Redis + Lua
   -> RabbitMQ
-  -> Nacos
+      -> order-service
 ```
+
+基础设施：
+
+- MySQL
+- Redis
+- RabbitMQ
+- Nacos
 
 ## 2. 服务边界
 
@@ -28,14 +41,15 @@ Browser
 - 白名单放行
 - 向下游透传 `X-User-Id`
 - 路由转发
+- Swagger/OpenAPI 聚合入口
 
 当前路由：
 
 - `/auth/**`
-- `/order/**`
+- `/product/**`
 - `/seckill/**`
 - `/seckill-product/**`
-- `/product/**`
+- `/order/**`
 
 ### 2.2 auth-service
 
@@ -46,27 +60,49 @@ Browser
 - 获取当前用户
 - 修改密码
 
-### 2.3 seckill-service
+### 2.3 product-service
 
 职责：
 
-- 普通商品查询
-- 秒杀商品查询
+- 普通商品列表
+- 普通商品详情
+- 普通商品下单入口
+- 普通商品库存校验与扣减
+- 通过 OpenFeign 调用 `order-service` 创建普通订单
+
+说明：
+
+- 对外暴露普通下单入口
+- 对内不承担订单查询与支付职责
+
+### 2.4 seckill-service
+
+职责：
+
+- 秒杀商品列表
+- 秒杀商品详情
 - 秒杀请求入口
 - 秒杀结果查询
-- 秒杀库存控制
+- Redis/Lua 秒杀库存与防重控制
 - 秒杀结果 Redis 缓存与数据库兜底
 
-### 2.4 order-service
+### 2.5 order-service
 
 职责：
 
+- 普通订单查询
+- 普通订单模拟支付
+- 普通订单支付状态查询
 - 秒杀订单查询
 - 秒杀订单模拟支付
-- 普通订单创建
-- 普通订单详情
-- 普通订单模拟支付
-- 两类订单支付状态查询
+- 秒杀订单支付状态查询
+- 内部普通建单接口
+- 消费秒杀消息并创建秒杀订单
+
+说明：
+
+- 不再承担普通商品查询与库存扣减职责
+- 内部普通建单接口仅供 `product-service` 调用
 
 ## 3. 鉴权规范
 
@@ -74,10 +110,13 @@ Browser
 
 - `POST /auth/login`
 - `POST /auth/register`
+- `/swagger-ui.html`
+- `/swagger-ui/**`
+- `/v3/api-docs/**`
 
 ### 3.2 受保护接口
 
-除白名单外，其他接口默认都需要：
+除白名单外，其他接口统一需要：
 
 ```http
 Authorization: Bearer <token>
@@ -93,35 +132,55 @@ X-User-Id: <userId>
 
 - 下游业务服务不重复解析 JWT
 - 下游统一通过 `X-User-Id` 获取当前用户
-- 商品接口当前也属于受保护接口
+- Swagger 对外契约只展示 `Authorization`，不展示内部头 `X-User-Id`
 
-## 4. 统一响应规范
+## 4. 文档规范
 
-统一返回：
+统一入口：
+
+- `http://localhost:8080/swagger-ui.html`
+
+当前聚合分组：
+
+- 认证服务
+- 普通商品服务
+- 秒杀服务
+- 订单服务
+
+原始文档地址：
+
+- `/v3/api-docs/auth-service`
+- `/v3/api-docs/product-service`
+- `/v3/api-docs/seckill-service`
+- `/v3/api-docs/order-service`
+
+## 5. 统一响应规范
+
+统一返回结构：
 
 ```json
 {
   "code": 200,
-  "message": "success",
+  "message": "成功",
   "data": {},
-  "timestamp": "2026-03-19T12:00:00"
+  "timestamp": "2026-03-20T12:00:00"
 }
 ```
 
-通用业务码：
+常见业务码：
 
-- `200`
-- `400`
-- `401`
-- `403`
-- `500`
-- `2001`
-- `2002`
-- `2003`
+- `200`：成功
+- `400`：参数错误
+- `401`：未登录或登录已失效
+- `403`：无权限访问
+- `500`：服务器内部错误
+- `2001`：库存不足
+- `2002`：请勿重复秒杀
+- `2003`：业务处理失败
 
-## 5. 当前数据库实体约定
+## 6. 数据库实体约定
 
-### 5.1 用户
+### 6.1 用户
 
 - 表：`user`
 
@@ -132,7 +191,7 @@ X-User-Id: <userId>
 - `password`
 - `create_time`
 
-### 5.2 普通商品
+### 6.2 普通商品
 
 - 表：`product`
 
@@ -149,7 +208,7 @@ X-User-Id: <userId>
 - `main_image`
 - `detail`
 
-### 5.3 秒杀商品
+### 6.3 秒杀商品
 
 - 表：`seckill_product`
 
@@ -164,19 +223,7 @@ X-User-Id: <userId>
 - `start_time`
 - `end_time`
 
-### 5.4 秒杀订单
-
-- 表：`seckill_order`
-
-核心字段：
-
-- `id`
-- `user_id`
-- `product_id`
-- `status`
-- `create_time`
-
-### 5.5 普通订单
+### 6.4 普通订单
 
 - 表：`normal_order`
 - 表：`normal_order_item`
@@ -186,9 +233,22 @@ X-User-Id: <userId>
 - 主表：`order_no`、`user_id`、`order_status`、`total_amount`、`pay_amount`、`pay_time`、`remark`、`address_snapshot`
 - 明细表：`product_id`、`product_name`、`product_subtitle`、`product_image`、`sale_price`、`quantity`、`item_amount`
 
-## 6. 当前接口分层约定
+### 6.5 秒杀订单
 
-### 6.1 Auth
+- 表：`seckill_order`
+
+核心字段：
+
+- `id`
+- `user_id`
+- `product_id`
+- `seckill_price`
+- `status`
+- `create_time`
+
+## 7. 对外接口约定
+
+### 7.1 认证接口
 
 - `POST /auth/login`
 - `POST /auth/register`
@@ -196,44 +256,58 @@ X-User-Id: <userId>
 - `GET /auth/me`
 - `POST /auth/updatePassword`
 
-### 6.2 商品
+### 7.2 普通商品接口
 
 - `GET /product/products`
 - `GET /product/products/{id}`
+- `POST /product/normal-orders`
+
+### 7.3 秒杀接口
+
 - `GET /seckill-product/products`
 - `GET /seckill-product/products/{id}`
-
-### 6.3 秒杀
-
 - `POST /seckill/{productId}`
 - `GET /seckill/result/{productId}`
 
-### 6.4 订单
+### 7.4 普通订单接口
 
-秒杀订单：
-
-- `GET /order/orders`
-- `GET /order/orderDetail/{id}`
-- `POST /order/seckill-orders/{id}/pay`
-- `GET /order/seckill-pay-status/{id}`
-
-普通订单：
-
-- `POST /order/checkout`
 - `GET /order/normal-orders`
 - `GET /order/normal-orders/{id}`
 - `POST /order/normal-orders/{id}/pay`
-- `GET /order/pay-status/{id}`
+- `GET /order/normal-orders/{id}/pay-status`
 
-## 7. 订单状态约定
+### 7.5 秒杀订单接口
 
-### 7.1 秒杀订单
+- `GET /order/seckill-orders`
+- `GET /order/seckill-orders/{id}`
+- `POST /order/seckill-orders/{id}/pay`
+- `GET /order/seckill-orders/{id}/pay-status`
+
+## 8. 内部接口约定
+
+仅服务间调用，不对前端开放：
+
+- `POST /internal/orders/normal`
+- `GET /internal/orders/normal/by-order-no`
+
+调用关系：
+
+- `product-service` -> OpenFeign -> `order-service`
+
+设计原因：
+
+- `product-service` 负责商品校验、库存扣减、订单快照组装
+- `order-service` 只负责普通订单落库、查询与支付
+
+## 9. 状态约定
+
+### 9.1 秒杀订单状态
 
 - `0`：待支付
 - `1`：已支付
 - `2`：已取消
 
-### 7.2 普通订单
+### 9.2 普通订单状态
 
 - `0`：待支付
 - `1`：已支付
@@ -241,19 +315,17 @@ X-User-Id: <userId>
 - `3`：已发货
 - `4`：已完成
 
-## 8. 前端接入约定
+### 9.3 秒杀结果状态
 
-- 前端统一走网关，不再直连服务
-- 前端不再使用 `/pay-product/**`
-- 前端统一不使用 `/seckill-order/**` 历史接口
-- 购物车当前为前端本地状态，不作为后端服务能力描述
+- `1`：秒杀成功
+- `0`：处理中 / 排队中
+- `-1`：秒杀失败
 
-## 9. 当前保留的实现特点
+## 10. 当前实现特点
 
+- 普通商品链路已从 `order-service` 解耦到 `product-service`
+- 普通下单通过 OpenFeign 跨模块创建订单
+- 秒杀链路仍为 Redis/Lua + RabbitMQ 异步建单
 - 秒杀结果支持 Redis 结果查询 + 数据库兜底
-- 秒杀订单与普通订单都已支持模拟支付
-- 修改密码已改为基于当前登录用户，并校验旧密码
-
-## 10. 版本说明
-
-- `V2.0`：同步普通商品、普通订单、秒杀支付、`/auth/me`、修改密码校验、前端统一接网关后的现状
+- 普通订单与秒杀订单都已支持模拟支付
+- Swagger 文档已统一接入网关聚合页，并统一中文展示
