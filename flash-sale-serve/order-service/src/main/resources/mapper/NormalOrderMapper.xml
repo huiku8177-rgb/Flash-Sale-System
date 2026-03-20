@@ -72,6 +72,15 @@
         LIMIT 1
     </select>
 
+    <select id="getOrderDetailByOrderNo" resultMap="NormalOrderVOResultMap">
+        SELECT
+        <include refid="BaseNormalOrderColumns"/>
+        FROM normal_order
+        WHERE user_id = #{userId}
+          AND order_no = #{orderNo}
+        LIMIT 1
+    </select>
+
     <update id="updatePayStatus">
         UPDATE normal_order
         SET order_status = #{targetStatus},

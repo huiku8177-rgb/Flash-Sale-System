@@ -2,9 +2,9 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.flashsale.seckillservice.mapper.ProductMapper">
+<mapper namespace="com.flashsale.productservice.mapper.ProductMapper">
 
-    <resultMap id="ProductVOResultMap" type="com.flashsale.seckillservice.domain.vo.ProductVO">
+    <resultMap id="ProductVOResultMap" type="com.flashsale.productservice.domain.vo.ProductVO">
         <id property="id" column="id"/>
         <result property="name" column="name"/>
         <result property="subtitle" column="subtitle"/>
@@ -59,4 +59,27 @@
         WHERE id = #{id}
     </select>
 
+    <select id="listByIds" resultType="com.flashsale.productservice.domain.po.ProductPO">
+        SELECT
+        <include refid="BaseProductColumns"/>
+        FROM product
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <update id="decreaseStock">
+        UPDATE product
+        SET stock = stock - #{quantity}
+        WHERE id = #{productId}
+          AND status = 1
+          AND stock >= #{quantity}
+    </update>
+
+    <update id="increaseStock">
+        UPDATE product
+        SET stock = stock + #{quantity}
+        WHERE id = #{productId}
+    </update>
 </mapper>

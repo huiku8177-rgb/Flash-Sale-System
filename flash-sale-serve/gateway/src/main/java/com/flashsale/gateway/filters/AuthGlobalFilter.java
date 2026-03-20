@@ -17,44 +17,51 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.util.Collections;
 import java.util.List;
-
 /**
  * @author strive_qin
  * @version 1.0
  * @description AuthGlobalFilter
- * @date 2026/3/12 16:22
+ * @date 2026/3/20 00:00
  */
+
+
 @Slf4j
 @RequiredArgsConstructor
 @Component
 public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
-    /** 鉴权白名单配置，例如 /auth/login、/auth/register。 */
     private final AuthProperties authProperties;
-    /** JWT 解析工具，用于统一验证 token 并提取 userId。 */
     private final JwtTool jwtTool;
     private final AntPathMatcher antPathMatcher = new AntPathMatcher();
 
+    /**
+     * 网关统一鉴权入口
+     *
+     * @param exchange 当前请求上下文
+     * @param chain 过滤器链
+     * @return 过滤结果
+     */
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getPath().toString();
 
-        log.info("网关鉴权过滤器拦截请求: {}", path);
+        log.info("网关鉴权过滤器处理请求，path={}", path);
 
-        // 预检请求不做鉴权，交给跨域过滤器处理。
+        // 预检请求直接放行，避免影响跨域协商
         if (request.getMethod() == HttpMethod.OPTIONS) {
             return chain.filter(exchange);
         }
 
-        // 1. 白名单放行
+        // 白名单路径不做鉴权，例如登录、注册和文档接口
         if (isExclude(path)) {
-            log.debug("{} 不需要登录拦截", path);
+            log.debug("当前路径命中白名单，跳过鉴权，path={}", path);
             return chain.filter(exchange);
         }
 
-        // 2. 获取 token
+        // 从 Authorization 请求头中提取 Bearer Token
         String token = null;
         List<String> authorization = request.getHeaders().get("Authorization");
         if (authorization != null && !authorization.isEmpty()) {
@@ -64,25 +71,25 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             }
         }
 
+        // 未携带令牌时直接返回 401
         if (token == null || token.isBlank()) {
             ServerHttpResponse response = exchange.getResponse();
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return response.setComplete();
         }
 
-        // 3. 校验 token
+        // 解析令牌，拿到当前用户ID
         Long userId;
         try {
             userId = jwtTool.parseToken(token);
         } catch (UnauthorizedException e) {
-            log.warn("token 校验失败: {}", e.getMessage());
+            log.warn("令牌解析失败：{}", e.getMessage());
             ServerHttpResponse response = exchange.getResponse();
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return response.setComplete();
         }
 
-        // 4. 传递用户信息给下游服务
-        // 下游服务只需读取 X-User-Id，无需重复解析 JWT
+        // 将用户ID透传给下游服务，避免各服务重复解析令牌
         ServerWebExchange mutatedExchange = exchange.mutate()
                 .request(builder -> builder.header("X-User-Id", userId.toString()))
                 .build();
@@ -90,9 +97,11 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         return chain.filter(mutatedExchange);
     }
 
+    // 判断当前请求路径是否命中鉴权白名单
     private boolean isExclude(String path) {
-        // 命中任意白名单规则即放行
-        for (String pathPattern : authProperties.getExcludePaths()) {
+        for (String pathPattern : authProperties.getExcludePaths() == null
+                ? Collections.<String>emptyList()
+                : authProperties.getExcludePaths()) {
             if (antPathMatcher.match(pathPattern, path)) {
                 return true;
             }
@@ -100,6 +109,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         return false;
     }
 
+    // 鉴权过滤器优先执行
     @Override
     public int getOrder() {
         return 0;

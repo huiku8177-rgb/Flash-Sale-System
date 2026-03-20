@@ -17,6 +17,13 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.HashMap;
 import java.util.Map;
+/**
+ * @author strive_qin
+ * @version 1.0
+ * @description RabbitMqConfig
+ * @date 2026/3/20 00:00
+ */
+
 
 @Configuration
 public class RabbitMqConfig {

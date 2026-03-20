@@ -1,15 +1,19 @@
-package com.flashsale.orderservice.domain.po;
+package com.flashsale.productservice.domain.po;
 
 import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-
 /**
- * 普通商品实体快照，仅供订单服务读取。
+ * @author strive_qin
+ * @version 1.0
+ * @description ProductPO
+ * @date 2026/3/20 00:00
  */
+
+
 @Data
-public class NormalProductPO {
+public class ProductPO {
 
     private Long id;
 

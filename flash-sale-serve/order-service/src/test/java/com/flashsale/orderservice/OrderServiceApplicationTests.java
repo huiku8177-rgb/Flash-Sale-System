@@ -6,6 +6,13 @@ import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
+/**
+ * @author strive_qin
+ * @version 1.0
+ * @description OrderServiceApplicationTests
+ * @date 2026/3/20 00:00
+ */
+
 
 @SpringBootTest
 public class OrderServiceApplicationTests {

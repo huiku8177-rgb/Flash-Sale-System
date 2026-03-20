@@ -1,50 +1,37 @@
 package com.flashsale.orderservice.domain.vo;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description SeckillOrderVO
- * @date 2026/3/13 16:04
- */
-
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-
 /**
- * 秒杀订单返回 VO
+ * @author strive_qin
+ * @version 1.0
+ * @description SeckillOrderVO
+ * @date 2026/3/20 00:00
  */
+
+
 @Data
+@Schema(description = "秒杀订单详情")
 public class SeckillOrderVO {
 
-    /**
-     * 订单ID
-     */
+    @Schema(description = "订单ID", example = "50001")
     private Long id;
 
-    /**
-     * 用户ID
-     */
+    @Schema(description = "用户ID", example = "10001")
     private Long userId;
 
-    /**
-     * 商品ID
-     */
+    @Schema(description = "秒杀商品ID", example = "2001")
     private Long productId;
 
-    /**
-     * 下单时秒杀价
-     */
+    @Schema(description = "秒杀价格", example = "699.00")
     private BigDecimal seckillPrice;
 
-    /**
-     * 订单状态：0-新建，1-已支付，2-已取消
-     */
+    @Schema(description = "订单状态：0-已创建，1-已支付，2-已取消", example = "0")
     private Integer status;
 
-    /**
-     * 创建时间
-     */
+    @Schema(description = "创建时间", example = "2026-03-20T20:00:05")
     private LocalDateTime createTime;
 }

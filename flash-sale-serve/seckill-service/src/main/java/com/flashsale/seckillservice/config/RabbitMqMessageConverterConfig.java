@@ -6,6 +6,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
+ * RabbitMQ 消息转换器配置
+ *
  * @author strive_qin
  * @version 1.0
  * @description RabbitMqMessageConverterConfig
@@ -14,6 +16,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RabbitMqMessageConverterConfig {
 
+    // 统一使用 JSON 作为消息体序列化格式
     @Bean
     public MessageConverter jacksonMessageConverter() {
         return new Jackson2JsonMessageConverter();

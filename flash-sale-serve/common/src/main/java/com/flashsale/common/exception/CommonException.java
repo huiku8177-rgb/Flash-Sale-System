@@ -2,6 +2,14 @@ package com.flashsale.common.exception;
 
 import lombok.Getter;
 
+/**
+ * 通用业务异常
+ *
+ * @author strive_qin
+ * @version 1.0
+ * @description CommonException
+ * @date 2026/3/20 00:00
+ */
 @Getter
 public class CommonException extends RuntimeException{
     private int code;

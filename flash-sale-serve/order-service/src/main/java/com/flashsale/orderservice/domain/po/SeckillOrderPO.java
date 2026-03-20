@@ -6,6 +6,8 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
+ * 秒杀订单实体
+ *
  * @author strive_qin
  * @version 1.0
  * @description SeckillOrderPO

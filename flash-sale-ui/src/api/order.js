@@ -1,12 +1,12 @@
-import { gatewayClient } from "./http";
+import { gatewayClient, productClient } from "./http";
 
 export async function fetchSeckillOrders() {
-  const response = await gatewayClient.get("/order/orders");
+  const response = await gatewayClient.get("/order/seckill-orders");
   return response.data.data ?? [];
 }
 
 export async function fetchSeckillOrderDetail(id) {
-  const response = await gatewayClient.get(`/order/orderDetail/${id}`);
+  const response = await gatewayClient.get(`/order/seckill-orders/${id}`);
   return response.data.data;
 }
 
@@ -16,12 +16,12 @@ export async function paySeckillOrder(id) {
 }
 
 export async function fetchSeckillPayStatus(id) {
-  const response = await gatewayClient.get(`/order/seckill-pay-status/${id}`);
+  const response = await gatewayClient.get(`/order/seckill-orders/${id}/pay-status`);
   return response.data.data;
 }
 
 export async function checkoutNormalOrder(payload) {
-  const response = await gatewayClient.post("/order/checkout", payload);
+  const response = await productClient.post("/product/normal-orders", payload);
   return response.data.data;
 }
 
@@ -45,6 +45,6 @@ export async function payNormalOrder(id) {
 }
 
 export async function fetchNormalPayStatus(id) {
-  const response = await gatewayClient.get(`/order/pay-status/${id}`);
+  const response = await gatewayClient.get(`/order/normal-orders/${id}/pay-status`);
   return response.data.data;
 }

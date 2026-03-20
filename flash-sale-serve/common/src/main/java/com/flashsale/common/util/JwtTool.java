@@ -11,6 +11,13 @@ import org.springframework.stereotype.Component;
 import java.security.KeyPair;
 import java.time.Duration;
 import java.util.Date;
+/**
+ * @author strive_qin
+ * @version 1.0
+ * @description JwtTool
+ * @date 2026/3/20 00:00
+ */
+
 
 @Component
 public class JwtTool {

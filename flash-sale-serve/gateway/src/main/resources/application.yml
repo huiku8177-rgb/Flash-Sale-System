@@ -29,11 +29,50 @@ spring:
           predicates:
             - Path=/seckill-product/**
         - id: product-service
-          uri: lb://seckill-service
+          uri: lb://product-service
           predicates:
             - Path=/product/**
+        - id: product-service-docs
+          uri: lb://product-service
+          predicates:
+            - Path=/v3/api-docs/product-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: auth-service-docs
+          uri: lb://auth-service
+          predicates:
+            - Path=/v3/api-docs/auth-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: seckill-service-docs
+          uri: lb://seckill-service
+          predicates:
+            - Path=/v3/api-docs/seckill-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: order-service-docs
+          uri: lb://order-service
+          predicates:
+            - Path=/v3/api-docs/order-service
+          filters:
+            - SetPath=/v3/api-docs
 server:
   port: 8080
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    persist-authorization: true
+    try-it-out-enabled: true
+    display-request-duration: true
+    urls:
+      - name: 认证服务
+        url: /v3/api-docs/auth-service
+      - name: 普通商品服务
+        url: /v3/api-docs/product-service
+      - name: 秒杀服务
+        url: /v3/api-docs/seckill-service
+      - name: 订单服务
+        url: /v3/api-docs/order-service
 flash-sale:
   jwt:
     location: classpath:flash-sale.jks
@@ -44,3 +83,7 @@ flash-sale:
     excludePaths:
       - /auth/login
       - /auth/register
+      - /swagger-ui.html
+      - /swagger-ui/**
+      - /v3/api-docs
+      - /v3/api-docs/**

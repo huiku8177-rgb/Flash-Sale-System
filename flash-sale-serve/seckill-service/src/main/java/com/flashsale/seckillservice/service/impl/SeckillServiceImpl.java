@@ -24,6 +24,13 @@ import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+/**
+ * @author strive_qin
+ * @version 1.0
+ * @description SeckillServiceImpl
+ * @date 2026/3/20 00:00
+ */
+
 
 @Service
 @Slf4j
@@ -54,6 +61,12 @@ public class SeckillServiceImpl implements SeckillService {
         this.seckillProducer = seckillProducer;
     }
 
+    /**
+     * 发起秒杀请求，先走 Redis 预扣库存，再投递 MQ 异步建单
+     *
+     * @param requestDTO 秒杀请求参数
+     * @return 秒杀结果
+     */
     @Override
     public Result<SeckillResultVO> seckill(SeckillRequestDTO requestDTO) {
         Long productId = requestDTO.getProductId();
@@ -61,12 +74,14 @@ public class SeckillServiceImpl implements SeckillService {
         SeckillResultVO result = new SeckillResultVO();
         result.setProductId(productId);
 
+        // 基础参数校验
         if (productId == null || userId == null) {
             result.setSuccess(false);
             result.setMessage("请求参数错误");
             return Result.success(result);
         }
 
+        // 校验商品存在、状态和秒杀时间窗口
         SeckillProductPO product = seckillProductMapper.getById(productId);
         if (product == null) {
             result.setSuccess(false);
@@ -96,6 +111,7 @@ public class SeckillServiceImpl implements SeckillService {
         String stockKey = RedisKeys.seckillStock(productId);
         String userKey = RedisKeys.seckillUser(productId);
 
+        // 通过 Lua 保证扣库存和防重逻辑原子执行
         Long luaResult = stringRedisTemplate.execute(
                 seckillScript,
                 Arrays.asList(stockKey, userKey),
@@ -120,6 +136,7 @@ public class SeckillServiceImpl implements SeckillService {
             return Result.success(result);
         }
 
+        // 记录排队中的状态，供前端轮询秒杀结果
         long ttlSeconds = calculateResultTtlSeconds(product.getEndTime(), now);
         String resultKey = RedisKeys.seckillResult(userId, productId);
         stringRedisTemplate.opsForValue().set(resultKey, "PROCESSING", ttlSeconds, TimeUnit.SECONDS);
@@ -134,8 +151,10 @@ public class SeckillServiceImpl implements SeckillService {
         sm.setExpireAt(now.plusSeconds(ttlSeconds));
 
         try {
+            // 将建单动作异步交给订单服务处理
             seckillProducer.sendSeckillMessage(sm);
         } catch (Exception e) {
+            // MQ 发送失败时立即回滚 Redis 库存和用户标记
             stringRedisTemplate.execute(
                     seckillRollbackScript,
                     Arrays.asList(stockKey, userKey),
@@ -153,6 +172,13 @@ public class SeckillServiceImpl implements SeckillService {
         return Result.success(result);
     }
 
+    /**
+     * 查询秒杀结果，优先读 Redis，必要时回查数据库订单
+     *
+     * @param userId 用户ID
+     * @param productId 商品ID
+     * @return 秒杀状态
+     */
     @Override
     public Result<SeckillStatusVO> getSeckillResult(Long userId, Long productId) {
         SeckillStatusVO result = new SeckillStatusVO();
@@ -163,6 +189,7 @@ public class SeckillServiceImpl implements SeckillService {
             return Result.success(result);
         }
 
+        // 先从 Redis 订单结果中读取最终成功状态
         String orderKey = RedisKeys.seckillOrder(userId, productId);
         String orderIdStr = stringRedisTemplate.opsForValue().get(orderKey);
         if (orderIdStr != null) {
@@ -172,6 +199,7 @@ public class SeckillServiceImpl implements SeckillService {
             return Result.success(result);
         }
 
+        // 再读取处理状态，区分处理中与失败
         String resultKey = RedisKeys.seckillResult(userId, productId);
         String status = stringRedisTemplate.opsForValue().get(resultKey);
         if ("PROCESSING".equals(status)) {
@@ -186,6 +214,7 @@ public class SeckillServiceImpl implements SeckillService {
             return Result.success(result);
         }
 
+        // 用户资格仍在集合中时，说明请求还在排队
         String userKey = RedisKeys.seckillUser(productId);
         Boolean exists = stringRedisTemplate.opsForSet().isMember(userKey, String.valueOf(userId));
         if (Boolean.TRUE.equals(exists)) {
@@ -217,6 +246,7 @@ public class SeckillServiceImpl implements SeckillService {
         return Result.success(result);
     }
 
+    // 根据秒杀结束时间计算结果缓存时长，避免查询结果过早失效
     private long calculateResultTtlSeconds(LocalDateTime endTime, LocalDateTime now) {
         if (endTime == null) {
             return DEFAULT_RESULT_TTL_SECONDS;

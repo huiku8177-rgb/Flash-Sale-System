@@ -17,6 +17,13 @@ import java.util.concurrent.TimeUnit;
 /**
  * 超时排队结果补偿任务：避免用户结果无限排队中。
  */
+/**
+ * @author strive_qin
+ * @version 1.0
+ * @description SeckillResultCompensationTask
+ * @date 2026/3/20 00:00
+ */
+
 @Component
 @RequiredArgsConstructor
 @Slf4j

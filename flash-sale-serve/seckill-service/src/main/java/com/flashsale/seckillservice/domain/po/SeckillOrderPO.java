@@ -1,12 +1,5 @@
 package com.flashsale.seckillservice.domain.po;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description SeckillOrderPO
- * @date 2026/3/13 16:00
- */
-
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -14,6 +7,11 @@ import java.time.LocalDateTime;
 
 /**
  * 秒杀订单表实体
+ *
+ * @author strive_qin
+ * @version 1.0
+ * @description SeckillOrderPO
+ * @date 2026/3/13 16:00
  */
 @Data
 public class SeckillOrderPO {

@@ -8,10 +8,14 @@ import org.apache.ibatis.annotations.Param;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-
 /**
- * 普通订单主表 Mapper。
+ * @author strive_qin
+ * @version 1.0
+ * @description NormalOrderMapper
+ * @date 2026/3/20 00:00
  */
+
+
 @Mapper
 public interface NormalOrderMapper {
 
@@ -20,6 +24,8 @@ public interface NormalOrderMapper {
     List<NormalOrderVO> listOrders(@Param("userId") Long userId, @Param("orderStatus") Integer orderStatus);
 
     NormalOrderVO getOrderDetail(@Param("userId") Long userId, @Param("id") Long id);
+
+    NormalOrderVO getOrderDetailByOrderNo(@Param("userId") Long userId, @Param("orderNo") String orderNo);
 
     int updatePayStatus(@Param("id") Long id,
                         @Param("userId") Long userId,

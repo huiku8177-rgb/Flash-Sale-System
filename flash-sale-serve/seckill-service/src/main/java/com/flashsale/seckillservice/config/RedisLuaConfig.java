@@ -7,6 +7,8 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 /**
+ * Redis Lua 脚本配置
+ *
  * @author strive_qin
  * @version 1.0
  * @description RedisLuaConfig
@@ -14,6 +16,8 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
  */
 @Configuration
 public class RedisLuaConfig {
+
+    // 秒杀预扣库存与防重脚本
     @Bean
     public DefaultRedisScript<Long> seckillScript() {
         DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
@@ -22,6 +26,7 @@ public class RedisLuaConfig {
         return redisScript;
     }
 
+    // MQ 发送失败后的 Redis 回滚脚本
     @Bean
     public DefaultRedisScript<Long> seckillRollbackScript() {
         DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();

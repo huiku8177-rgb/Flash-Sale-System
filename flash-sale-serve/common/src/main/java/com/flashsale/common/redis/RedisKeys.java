@@ -22,6 +22,7 @@ package com.flashsale.common.redis;
  * @version 1.0
  * @description RedisKeys
  * @date 2026/3/13 14:58
+ *
  */
 public final class RedisKeys {
 

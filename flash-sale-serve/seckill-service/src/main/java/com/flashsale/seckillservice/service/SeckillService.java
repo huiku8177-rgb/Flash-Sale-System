@@ -6,6 +6,8 @@ import com.flashsale.seckillservice.domain.vo.SeckillResultVO;
 import com.flashsale.seckillservice.domain.vo.SeckillStatusVO;
 
 /**
+ * 秒杀服务接口
+ *
  * @author strive_qin
  * @version 1.0
  * @description SeckillService

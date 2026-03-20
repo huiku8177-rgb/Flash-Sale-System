@@ -8,6 +8,13 @@ import java.time.LocalDateTime;
 /**
  * 秒杀商品表实体
  */
+/**
+ * @author strive_qin
+ * @version 1.0
+ * @description SeckillProductPO
+ * @date 2026/3/20 00:00
+ */
+
 @Data
 public class SeckillProductPO {
 

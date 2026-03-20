@@ -9,6 +9,8 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
 
 /**
+ * 秒杀消息发送器
+ *
  * @author strive_qin
  * @version 1.0
  * @description SeckillProducer
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Component;
 public class SeckillProducer {
     private final RabbitTemplate rabbitTemplate;
 
+    // 注册消息投递确认与退回回调
     @jakarta.annotation.PostConstruct
     public void initCallbacks() {
         rabbitTemplate.setConfirmCallback((correlationData, ack, cause) -> {
@@ -37,6 +40,7 @@ public class SeckillProducer {
         );
     }
 
+    // 发送秒杀建单消息到 RabbitMQ
     public void sendSeckillMessage(SeckillMessage seckillMessage) {
         CorrelationData correlationData = new CorrelationData(seckillMessage.getMessageId());
         rabbitTemplate.convertAndSend(

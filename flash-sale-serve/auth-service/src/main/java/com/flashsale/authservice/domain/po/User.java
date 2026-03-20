@@ -4,6 +4,8 @@ import lombok.Data;
 import org.springframework.format.annotation.DateTimeFormat;
 
 /**
+ * 用户实体
+ *
  * @author strive_qin
  * @version 1.0
  * @description User

@@ -7,6 +7,13 @@ import org.springframework.web.cors.reactive.CorsWebFilter;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
+/**
+ * @author strive_qin
+ * @version 1.0
+ * @description CorsConfig
+ * @date 2026/3/20 00:00
+ */
+
 
 @Configuration
 public class CorsConfig {

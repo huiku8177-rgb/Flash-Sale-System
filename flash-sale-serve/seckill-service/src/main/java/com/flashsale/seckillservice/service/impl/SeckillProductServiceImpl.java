@@ -14,6 +14,13 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+/**
+ * @author strive_qin
+ * @version 1.0
+ * @description SeckillProductServiceImpl
+ * @date 2026/3/20 00:00
+ */
+
 
 @Service
 @RequiredArgsConstructor
@@ -23,17 +30,30 @@ public class SeckillProductServiceImpl implements SeckillProductService {
     private final SeckillProductMapper seckillProductMapper;
     private final StringRedisTemplate stringRedisTemplate;
 
+    /**
+     * 查询秒杀商品列表
+     *
+     * @param queryDTO 查询参数
+     * @return 商品列表
+     */
     @Override
     public Result<List<SeckillProductVO>> listProducts(SeckillProductQueryDTO queryDTO) {
         if (queryDTO == null) {
             queryDTO = new SeckillProductQueryDTO();
         }
+        // 默认只查询启用中的秒杀商品
         if (queryDTO.getStatus() == null) {
             queryDTO.setStatus(1);
         }
         return Result.success(seckillProductMapper.listProducts(queryDTO));
     }
 
+    /**
+     * 查询秒杀商品详情
+     *
+     * @param id 商品ID
+     * @return 商品详情
+     */
     @Override
     public Result<SeckillProductVO> getProductDetail(Long id) {
         if (id == null) {
@@ -46,6 +66,9 @@ public class SeckillProductServiceImpl implements SeckillProductService {
         return Result.success(product);
     }
 
+    /**
+     * 启动时将秒杀库存同步到 Redis
+     */
     @Override
     public void loadStockToRedis() {
         List<SeckillProductPO> products = seckillProductMapper.listAll();
@@ -55,6 +78,7 @@ public class SeckillProductServiceImpl implements SeckillProductService {
             return;
         }
 
+        // 按商品维度初始化 Redis 库存键
         for (SeckillProductPO product : products) {
             String key = RedisKeys.seckillStock(product.getId());
             stringRedisTemplate.opsForValue().set(key, String.valueOf(product.getStock()));

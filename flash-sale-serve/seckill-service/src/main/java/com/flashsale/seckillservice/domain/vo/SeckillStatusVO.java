@@ -1,27 +1,25 @@
 package com.flashsale.seckillservice.domain.vo;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
-
 /**
- * 秒杀结果查询 VO
+ * @author strive_qin
+ * @version 1.0
+ * @description SeckillStatusVO
+ * @date 2026/3/20 00:00
  */
+
+
 @Data
+@Schema(description = "秒杀处理状态")
 public class SeckillStatusVO {
 
-    /**
-     * 1-秒杀成功
-     * 0-排队中
-     * -1-秒杀失败
-     */
+    @Schema(description = "秒杀状态：1-成功，0-处理中，-1-失败", example = "0")
     private Integer status;
 
-    /**
-     * 提示信息
-     */
+    @Schema(description = "状态说明", example = "处理中")
     private String message;
 
-    /**
-     * 订单ID
-     */
+    @Schema(description = "成功时返回的订单ID", example = "50001")
     private Long orderId;
 }

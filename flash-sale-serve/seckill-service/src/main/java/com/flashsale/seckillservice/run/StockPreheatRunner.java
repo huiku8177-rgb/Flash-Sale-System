@@ -7,6 +7,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
+ * 应用启动后按配置决定是否执行秒杀库存预热
+ *
  * @author strive_qin
  * @version 1.0
  * @description StockPreHeatRunner
@@ -19,9 +21,9 @@ public class StockPreheatRunner implements CommandLineRunner {
 
     private final SeckillProductService stockPreheatService;
 
+    // 启动后触发秒杀库存预热
     @Override
     public void run(String... args) {
-
         stockPreheatService.loadStockToRedis();
     }
 }

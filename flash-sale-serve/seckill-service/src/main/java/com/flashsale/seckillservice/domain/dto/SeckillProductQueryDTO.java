@@ -1,20 +1,22 @@
 package com.flashsale.seckillservice.domain.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
-
 /**
- * 秒杀商品查询 DTO
+ * @author strive_qin
+ * @version 1.0
+ * @description SeckillProductQueryDTO
+ * @date 2026/3/20 00:00
  */
+
+
 @Data
+@Schema(description = "秒杀商品列表查询参数")
 public class SeckillProductQueryDTO {
 
-    /**
-     * 商品名称（模糊查询）
-     */
+    @Schema(description = "商品名称关键字", example = "耳机")
     private String name;
 
-    /**
-     * 状态：0-下架，1-上架
-     */
+    @Schema(description = "商品状态，1-启用，0-停用", example = "1")
     private Integer status;
 }

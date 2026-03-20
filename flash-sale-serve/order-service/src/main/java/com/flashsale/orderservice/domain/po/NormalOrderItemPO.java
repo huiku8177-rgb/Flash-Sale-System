@@ -8,6 +8,13 @@ import java.time.LocalDateTime;
 /**
  * 普通订单明细实体。
  */
+/**
+ * @author strive_qin
+ * @version 1.0
+ * @description NormalOrderItemPO
+ * @date 2026/3/20 00:00
+ */
+
 @Data
 public class NormalOrderItemPO {
 

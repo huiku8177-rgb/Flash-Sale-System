@@ -26,6 +26,13 @@ import java.util.concurrent.TimeUnit;
  *     <li>消费死信并触发补偿逻辑。</li>
  * </ul>
  */
+/**
+ * @author strive_qin
+ * @version 1.0
+ * @description SeckillOrderConsumer
+ * @date 2026/3/20 00:00
+ */
+
 @Slf4j
 @Component
 @RequiredArgsConstructor

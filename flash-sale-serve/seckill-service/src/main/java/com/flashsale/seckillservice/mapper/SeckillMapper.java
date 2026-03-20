@@ -5,6 +5,8 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 /**
+ * 秒杀结果查询 Mapper
+ *
  * @author strive_qin
  * @version 1.0
  * @description SeckillMapper

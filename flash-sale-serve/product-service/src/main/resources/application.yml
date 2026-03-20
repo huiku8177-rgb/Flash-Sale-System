@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: product-service
+  datasource:
+    url: jdbc:mysql://localhost:3306/flash_sale?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+  cloud:
+    nacos:
+      server-addr: 192.168.100.130:8848
+      discovery:
+        namespace: cac2e129-5c78-402a-bdd1-b9dbb0892486
+        register-enabled: true
+      config:
+        enabled: false
+    openfeign:
+      client:
+        config:
+          default:
+            connectTimeout: 3000
+            readTimeout: 5000
+            loggerLevel: basic
+  main:
+    allow-bean-definition-overriding: true
+
+server:
+  port: 8084
+  forward-headers-strategy: framework
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.flashsale.productservice.domain.po,com.flashsale.productservice.domain.vo,com.flashsale.productservice.domain.dto
+  configuration:
+    map-underscore-to-camel-case: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs

@@ -9,6 +9,7 @@
     <packaging>pom</packaging>
     <modules>
         <module>gateway</module>
+        <module>product-service</module>
         <module>seckill-service</module>
         <module>order-service</module>
         <module>common</module>
@@ -19,6 +20,7 @@
         <spring.boot.version>3.2.5</spring.boot.version>
         <spring.cloud.version>2023.0.1</spring.cloud.version>
         <spring-cloud-alibaba.version>2023.0.1.0</spring-cloud-alibaba.version>
+        <springdoc.version>2.5.0</springdoc.version>
         <hutool.version>5.8.11</hutool.version>
         <mybatis.version>3.0.3</mybatis.version>
     </properties>
@@ -69,6 +71,17 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
