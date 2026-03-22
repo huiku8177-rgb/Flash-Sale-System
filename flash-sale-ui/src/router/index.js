@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import AppShellView from "../views/AppShellView.vue";
 import CartView from "../views/CartView.vue";
+import CheckoutView from "../views/CheckoutView.vue";
 import FlashSaleView from "../views/FlashSaleView.vue";
 import HomeView from "../views/HomeView.vue";
 import LoginView from "../views/LoginView.vue";
@@ -23,11 +24,16 @@ const router = createRouter({
       }
     },
     {
-      path: "/app",
-      component: AppShellView,
+      path: "/checkout",
+      name: "checkout",
+      component: CheckoutView,
       meta: {
         requiresAuth: true
-      },
+      }
+    },
+    {
+      path: "/app",
+      component: AppShellView,
       children: [
         {
           path: "",
@@ -46,12 +52,18 @@ const router = createRouter({
         {
           path: "cart",
           name: "app-cart",
-          component: CartView
+          component: CartView,
+          meta: {
+            requiresAuth: true
+          }
         },
         {
           path: "profile",
           name: "app-profile",
-          component: ProfileView
+          component: ProfileView,
+          meta: {
+            requiresAuth: true
+          }
         }
       ]
     }

@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.flashsale.productservice.mapper.CartMapper">
+
+    <resultMap id="CartItemPOResultMap" type="com.flashsale.productservice.domain.po.CartItemPO">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="productId" column="product_id"/>
+        <result property="quantity" column="quantity"/>
+        <result property="selected" column="selected"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <resultMap id="CartItemVOResultMap" type="com.flashsale.productservice.domain.vo.CartItemVO">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="productId" column="product_id"/>
+        <result property="productName" column="product_name"/>
+        <result property="productSubtitle" column="product_subtitle"/>
+        <result property="productImage" column="product_image"/>
+        <result property="price" column="price"/>
+        <result property="marketPrice" column="market_price"/>
+        <result property="stock" column="stock"/>
+        <result property="status" column="status"/>
+        <result property="quantity" column="quantity"/>
+        <result property="selected" column="selected"/>
+        <result property="itemAmount" column="item_amount"/>
+        <result property="canCheckout" column="can_checkout"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <sql id="CartItemJoinColumns">
+        c.id,
+        c.user_id,
+        c.product_id,
+        c.quantity,
+        c.selected,
+        c.create_time,
+        c.update_time,
+        p.name AS product_name,
+        p.subtitle AS product_subtitle,
+        p.main_image AS product_image,
+        p.price,
+        p.market_price,
+        p.stock,
+        p.status,
+        CASE
+            WHEN p.price IS NULL THEN NULL
+            ELSE p.price * c.quantity
+        END AS item_amount,
+        CASE
+            WHEN p.id IS NOT NULL AND p.status = 1 AND p.stock >= c.quantity THEN 1
+            ELSE 0
+        END AS can_checkout
+    </sql>
+
+    <select id="listCartItems" resultMap="CartItemVOResultMap">
+        SELECT
+        <include refid="CartItemJoinColumns"/>
+        FROM cart_item c
+        LEFT JOIN product p ON p.id = c.product_id
+        WHERE c.user_id = #{userId}
+        ORDER BY c.update_time DESC, c.id DESC
+    </select>
+
+    <select id="getCartItemDetail" resultMap="CartItemVOResultMap">
+        SELECT
+        <include refid="CartItemJoinColumns"/>
+        FROM cart_item c
+        LEFT JOIN product p ON p.id = c.product_id
+        WHERE c.user_id = #{userId}
+          AND c.id = #{id}
+    </select>
+
+    <select id="listSelectedCartItems" resultMap="CartItemVOResultMap">
+        SELECT
+        <include refid="CartItemJoinColumns"/>
+        FROM cart_item c
+        LEFT JOIN product p ON p.id = c.product_id
+        WHERE c.user_id = #{userId}
+          AND c.selected = 1
+        ORDER BY c.update_time DESC, c.id DESC
+    </select>
+
+    <select id="getCartItem" resultMap="CartItemPOResultMap">
+        SELECT id, user_id, product_id, quantity, selected, create_time, update_time
+        FROM cart_item
+        WHERE user_id = #{userId}
+          AND id = #{id}
+    </select>
+
+    <select id="findByUserIdAndProductId" resultMap="CartItemPOResultMap">
+        SELECT id, user_id, product_id, quantity, selected, create_time, update_time
+        FROM cart_item
+        WHERE user_id = #{userId}
+          AND product_id = #{productId}
+        LIMIT 1
+    </select>
+
+    <insert id="insertCartItem" parameterType="com.flashsale.productservice.domain.po.CartItemPO"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO cart_item (
+            user_id,
+            product_id,
+            quantity,
+            selected
+        )
+        VALUES (
+            #{userId},
+            #{productId},
+            #{quantity},
+            #{selected}
+        )
+    </insert>
+
+    <update id="updateCartItem">
+        UPDATE cart_item
+        SET quantity = #{quantity},
+            selected = #{selected}
+        WHERE user_id = #{userId}
+          AND id = #{id}
+    </update>
+
+    <delete id="deleteCartItem">
+        DELETE FROM cart_item
+        WHERE user_id = #{userId}
+          AND id = #{id}
+    </delete>
+
+    <delete id="deleteAllCartItems">
+        DELETE FROM cart_item
+        WHERE user_id = #{userId}
+    </delete>
+
+    <delete id="deleteSelectedCartItems">
+        DELETE FROM cart_item
+        WHERE user_id = #{userId}
+          AND selected = 1
+    </delete>
+
+    <delete id="deleteCartItemsByIds">
+        DELETE FROM cart_item
+        WHERE user_id = #{userId}
+          AND id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

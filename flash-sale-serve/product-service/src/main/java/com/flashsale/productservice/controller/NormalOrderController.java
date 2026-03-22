@@ -21,14 +21,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 /**
  * @author strive_qin
  * @version 1.0
  * @description NormalOrderController
  * @date 2026/3/20 00:00
  */
-
-
 @Tag(name = "普通订单", description = "普通订单创建接口")
 @SecurityRequirement(name = "bearerAuth")
 @Validated
@@ -40,15 +39,14 @@ public class NormalOrderController {
 
     private final ProductService productService;
 
-
     /**
-     * 创建普通订单
+     * 基于当前用户已勾选的购物车商品创建普通订单。
      *
-     * @param userId       用户ID
-     * @param checkoutDTO  订单信息
+     * @param userId 用户ID
+     * @param checkoutDTO 订单信息
      * @return 订单信息
      */
-    @Operation(summary = "创建普通订单", description = "在商品服务完成普通商品校验与扣库存后，调用订单服务创建普通订单。")
+    @Operation(summary = "创建普通订单", description = "基于当前用户已勾选的购物车商品创建普通订单。")
     @ApiResponses({
             @ApiResponse(
                     responseCode = "200",
@@ -67,9 +65,7 @@ public class NormalOrderController {
     @PostMapping("/normal-orders")
     public Result<NormalOrderVO> createOrder(@Parameter(hidden = true) @RequestHeader("X-User-Id") Long userId,
                                              @Valid @RequestBody NormalOrderCheckoutDTO checkoutDTO) {
-        log.info("用户 {} 通过商品服务创建普通订单，商品项数量={}",
-                userId,
-                checkoutDTO == null || checkoutDTO.getItems() == null ? 0 : checkoutDTO.getItems().size());
+        log.info("用户 {} 通过商品服务基于已选购物车商品创建普通订单", userId);
         return productService.createNormalOrder(userId, checkoutDTO);
     }
 }

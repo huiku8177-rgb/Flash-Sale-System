@@ -18,6 +18,5 @@ import java.util.List;
 @ConfigurationProperties(prefix = "flash-sale.auth")
 @Component
 public class AuthProperties {
-    private List<String> includePaths;
     private List<String> excludePaths;
 }

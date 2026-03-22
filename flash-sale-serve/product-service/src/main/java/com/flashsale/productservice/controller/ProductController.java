@@ -1,4 +1,4 @@
-﻿package com.flashsale.productservice.controller;
+package com.flashsale.productservice.controller;
 
 import com.flashsale.common.domain.Result;
 import com.flashsale.productservice.domain.dto.ProductQueryDTO;
@@ -25,7 +25,6 @@ import java.util.List;
  * @description ProductController
  * @date 2026/3/20 00:00
  */
-
 @Tag(name = "普通商品", description = "普通商品相关接口")
 @SecurityRequirement(name = "bearerAuth")
 @Validated

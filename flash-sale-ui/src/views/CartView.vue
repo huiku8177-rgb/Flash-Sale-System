@@ -1,8 +1,10 @@
 <script setup>
 import { computed, inject } from "vue";
-import { formatCurrency, getCountdownText } from "../utils/format";
+import { useRouter } from "vue-router";
+import { formatCurrency } from "../utils/format";
 
 const mallApp = inject("mallApp");
+const router = useRouter();
 
 const recommendations = computed(() => {
   return mallApp.products
@@ -10,11 +12,11 @@ const recommendations = computed(() => {
     .slice(0, 4);
 });
 
-function getItemMeta(item) {
-  if (item.productType === "seckill") {
-    return getCountdownText(item.startTime, item.endTime, mallApp.currentTime);
+function goCheckout() {
+  if (!mallApp.checkoutSummary.count) {
+    return;
   }
-  return item.subtitle || "普通商品支持直接走 checkout 下单接口。";
+  router.push({ name: "checkout" });
 }
 </script>
 
@@ -23,11 +25,11 @@ function getItemMeta(item) {
     <section class="cart-page-header section-card">
       <div>
         <p class="eyebrow">Cart Workspace</p>
-        <h2>购物车与结算</h2>
-        <p>普通商品可直接创建订单，秒杀商品继续作为抢购草稿保留，正式秒杀仍需在秒杀会场发起。</p>
+        <h2>购物车明细</h2>
+        <p>先在这里勾选需要结算的普通商品，再进入独立结算页完成模拟支付。</p>
       </div>
       <div class="cart-page-summary">
-        <span>总件数 {{ mallApp.cartSummary.count }}</span>
+        <span>购物车商品数 {{ mallApp.cartSummary.count }}</span>
         <strong>{{ formatCurrency(mallApp.cartSummary.total) }}</strong>
       </div>
     </section>
@@ -39,34 +41,43 @@ function getItemMeta(item) {
             <p class="eyebrow">Cart Items</p>
             <h3>购物车明细</h3>
           </div>
-          <el-button text @click="mallApp.loadProducts">刷新普通商品</el-button>
+          <el-button text @click="mallApp.loadCartItems">刷新购物车</el-button>
         </div>
 
-        <div v-if="mallApp.cartItems.length" class="cart-table">
-          <div class="cart-table-head">
+        <div v-if="mallApp.normalCartItems.length" class="cart-table">
+          <div class="cart-table-head cart-table-head-rich">
+            <span>选择</span>
             <span>商品</span>
-            <span>类型</span>
+            <span>状态</span>
             <span>数量</span>
             <span>价格</span>
             <span>操作</span>
           </div>
 
           <article
-            v-for="item in mallApp.cartItems"
+            v-for="item in mallApp.normalCartItems"
             :key="item.cartKey"
-            class="cart-table-row"
+            class="cart-table-row cart-table-row-rich"
           >
+            <div class="cart-col cart-col-check">
+              <el-checkbox
+                :model-value="item.selected"
+                :disabled="!item.canCheckout"
+                @change="mallApp.updateCartSelected(item.cartKey, $event)"
+              />
+            </div>
+
             <div class="cart-col cart-col-product">
               <div class="cart-thumb">{{ item.name.slice(0, 2) }}</div>
               <div>
                 <strong>{{ item.name }}</strong>
-                <small>{{ getItemMeta(item) }}</small>
+                <small>{{ item.subtitle || "普通商品" }}</small>
               </div>
             </div>
 
             <div class="cart-col">
-              <el-tag :type="item.productType === 'seckill' ? 'danger' : 'success'" effect="plain">
-                {{ item.productType === "seckill" ? "秒杀草稿" : "普通商品" }}
+              <el-tag :type="item.canCheckout ? 'success' : 'warning'" effect="plain">
+                {{ item.canCheckout ? "可结算" : "暂不可结算" }}
               </el-tag>
             </div>
 
@@ -79,7 +90,8 @@ function getItemMeta(item) {
             </div>
 
             <div class="cart-col">
-              <strong>{{ formatCurrency(mallApp.getCartItemPrice(item)) }}</strong>
+              <strong>{{ formatCurrency(mallApp.getCartItemPrice(item) * item.quantity) }}</strong>
+              <small>单价 {{ formatCurrency(mallApp.getCartItemPrice(item)) }}</small>
             </div>
 
             <div class="cart-col cart-col-actions">
@@ -91,65 +103,42 @@ function getItemMeta(item) {
 
         <el-empty
           v-else
-          description="购物车还是空的，先去首页或秒杀会场挑些商品吧"
+          description="购物车还是空的，先去首页挑选一些普通商品吧"
         />
+
+        <div v-if="mallApp.normalCartItems.length" class="cart-bottom-bar">
+          <label class="cart-select-all">
+            <el-checkbox
+              :model-value="mallApp.normalCartAllSelected"
+              @change="mallApp.toggleAllNormalCart($event)"
+            />
+            <span>全选</span>
+          </label>
+
+          <div class="cart-bottom-summary">
+            <span>已选 {{ mallApp.selectedNormalCartItems.length }} 种 / {{ mallApp.checkoutSummary.count }} 件</span>
+            <strong>合计 {{ formatCurrency(mallApp.checkoutSummary.total) }}</strong>
+          </div>
+
+          <el-button
+            type="danger"
+            size="large"
+            :disabled="!mallApp.checkoutSummary.count"
+            @click="goCheckout"
+          >
+            去结算
+          </el-button>
+        </div>
       </section>
 
       <aside class="cart-side-panel">
         <section class="sidebar-card">
-          <p class="eyebrow">Normal Checkout</p>
-          <h3>普通商品结算</h3>
-          <div class="sidebar-metrics">
-            <div>
-              <span>可结算件数</span>
-              <strong>{{ mallApp.checkoutSummary.count }}</strong>
-            </div>
-            <div>
-              <span>普通商品总额</span>
-              <strong>{{ formatCurrency(mallApp.checkoutSummary.total) }}</strong>
-            </div>
-          </div>
-
-          <el-form class="checkout-form" label-position="top">
-            <el-form-item label="收货人">
-              <el-input v-model="mallApp.checkoutForm.receiver" placeholder="例如 Neo" />
-            </el-form-item>
-            <el-form-item label="手机号">
-              <el-input v-model="mallApp.checkoutForm.mobile" placeholder="例如 13800000000" />
-            </el-form-item>
-            <el-form-item label="收货地址">
-              <el-input
-                v-model="mallApp.checkoutForm.detail"
-                type="textarea"
-                :rows="3"
-                placeholder="填写地址后会作为地址快照传给后端"
-              />
-            </el-form-item>
-            <el-form-item label="订单备注">
-              <el-input
-                v-model="mallApp.checkoutForm.remark"
-                placeholder="例如 工作日白天送达"
-              />
-            </el-form-item>
-          </el-form>
-
-          <el-button
-            type="danger"
-            :disabled="!mallApp.normalCartItems.length"
-            :loading="mallApp.checkoutLoading"
-            @click="mallApp.checkoutNormalCart"
-          >
-            创建普通订单
-          </el-button>
-        </section>
-
-        <section class="sidebar-card">
-          <p class="eyebrow">Seckill Draft</p>
-          <h3>秒杀草稿提醒</h3>
+          <p class="eyebrow">Checkout Hint</p>
+          <h3>结算说明</h3>
           <div class="side-bullet-list compact-list">
-            <div>秒杀商品不会在购物车直接下单。</div>
-            <div>请前往“秒杀会场”发起抢购，系统会异步创建秒杀订单。</div>
-            <div>抢购成功后可在个人中心继续模拟支付和查看状态。</div>
+            <div>勾选普通商品后，可进入独立结算页确认商品明细。</div>
+            <div>结算页会填写收货信息，并在底部完成模拟支付。</div>
+            <div>支付成功后会自动返回购物车页，并刷新当前购物车数据。</div>
           </div>
         </section>
 

@@ -78,6 +78,13 @@ function goFlash() {
   router.push({ name: "app-flash" });
 }
 
+async function buyNow(product) {
+  const ready = await mallApp.prepareImmediateCheckout(product);
+  if (ready) {
+    router.push({ name: "checkout" });
+  }
+}
+
 function loadMoreProducts() {
   const total = (mallApp.featuredNormalProducts || []).length;
   if (visibleCount.value >= total) {
@@ -237,6 +244,7 @@ onBeforeUnmount(() => {
             <span>{{ formatCurrency(product.marketPrice) }}</span>
           </div>
           <div class="desktop-card-actions">
+            <el-button type="danger" plain @click="buyNow(product)">立即购买</el-button>
             <el-button text @click="mallApp.openProduct(product, 'normal')">查看详情</el-button>
             <el-button round @click="mallApp.addToCart(product, 'normal')">加入购物车</el-button>
           </div>

@@ -56,8 +56,10 @@ spring:
             - Path=/v3/api-docs/order-service
           filters:
             - SetPath=/v3/api-docs
+
 server:
   port: 8080
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
@@ -73,6 +75,7 @@ springdoc:
         url: /v3/api-docs/seckill-service
       - name: 订单服务
         url: /v3/api-docs/order-service
+
 flash-sale:
   jwt:
     location: classpath:flash-sale.jks
@@ -81,9 +84,15 @@ flash-sale:
     tokenTTL: 30m
   auth:
     excludePaths:
-      - /auth/login
-      - /auth/register
+      - POST:/auth/login
+      - POST:/auth/register
+      - GET:/product/products
+      - GET:/product/products/**
+      - GET:/seckill-product/products
+      - GET:/seckill-product/products/**
       - /swagger-ui.html
       - /swagger-ui/**
       - /v3/api-docs
       - /v3/api-docs/**
+      - /error
+      - /favicon.ico

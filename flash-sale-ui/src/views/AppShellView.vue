@@ -1,9 +1,8 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, provide, reactive } from "vue";
+import { computed, inject } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { logout } from "../api/auth";
-import { useMallApp } from "../composables/useMallApp";
 import { clearSession } from "../stores/auth";
 import {
   formatCurrency,
@@ -16,9 +15,7 @@ import {
 
 const route = useRoute();
 const router = useRouter();
-const mallApp = reactive(useMallApp());
-
-provide("mallApp", mallApp);
+const mallApp = inject("mallApp");
 
 const navItems = [
   { label: "首页", routeName: "app-home" },
@@ -58,14 +55,6 @@ const searchKeyword = computed({
   }
 });
 
-onMounted(async () => {
-  await mallApp.init();
-});
-
-onBeforeUnmount(() => {
-  mallApp.dispose();
-});
-
 async function handleLogout() {
   try {
     await logout();
@@ -81,6 +70,13 @@ async function handleSearch() {
   await mallApp.loadProducts();
   router.push({ name: "app-home" });
   ElMessage.success("普通商品列表已按关键词刷新");
+}
+
+async function handleBuyNowFromDetail() {
+  const ready = await mallApp.prepareImmediateCheckout(mallApp.productDetail);
+  if (ready) {
+    router.push({ name: "checkout" });
+  }
 }
 
 function jumpNav(routeName) {
@@ -335,6 +331,13 @@ function fillKeyword(keyword) {
             </div>
 
             <div class="dialog-actions">
+              <el-button
+                v-if="mallApp.productDetailType === 'normal'"
+                plain
+                @click="handleBuyNowFromDetail"
+              >
+                立即购买
+              </el-button>
               <el-button
                 v-if="mallApp.productDetailType === 'normal'"
                 type="danger"
