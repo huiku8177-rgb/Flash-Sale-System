@@ -1,5 +1,6 @@
 import { computed, reactive, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { fetchUserAddresses } from "../api/address";
 import { fetchCurrentUser, updatePassword } from "../api/auth";
 import {
   addCartItem,
@@ -8,6 +9,7 @@ import {
   updateCartItem
 } from "../api/cart";
 import {
+  cancelNormalOrder,
   checkoutNormalOrder,
   fetchNormalOrderDetail,
   fetchNormalOrders,
@@ -25,7 +27,7 @@ import {
   fetchSeckillProducts
 } from "../api/seckillProduct";
 import { authState } from "../stores/auth";
-import { getOrderStatusText, getProductPhase } from "../utils/format";
+import { formatDateTime, getOrderStatusText, getProductPhase } from "../utils/format";
 
 const CATEGORY_NAME_MAP = {
   1: "休闲零食",
@@ -42,12 +44,15 @@ export function useMallApp() {
   const normalOrders = ref([]);
   const seckillOrders = ref([]);
   const cartItems = ref([]);
+  const addresses = ref([]);
   const profile = ref(null);
+  const pendingCheckoutOrder = ref(null);
 
   const productsLoading = ref(false);
   const seckillProductsLoading = ref(false);
   const ordersLoading = ref(false);
   const profileLoading = ref(false);
+  const addressesLoading = ref(false);
   const checkoutLoading = ref(false);
   const productDetailLoading = ref(false);
   const orderDetailLoading = ref(false);
@@ -66,11 +71,9 @@ export function useMallApp() {
     categoryId: null
   });
   const checkoutForm = reactive({
-    receiver: "",
-    mobile: "",
-    detail: "",
     remark: ""
   });
+  const selectedAddressId = ref(null);
   const seckillState = reactive({});
 
   const pollingTimers = new Map();
@@ -83,8 +86,12 @@ export function useMallApp() {
       if (!token) {
         profile.value = null;
         cartItems.value = [];
+        addresses.value = [];
         normalOrders.value = [];
         seckillOrders.value = [];
+        selectedAddressId.value = null;
+        pendingCheckoutOrder.value = null;
+        clearCheckoutForm();
       }
     }
   );
@@ -191,12 +198,12 @@ export function useMallApp() {
       selectableNormalCartItems.value.every((item) => item.selected);
   });
 
+  const selectedAddress = computed(() => {
+    return addresses.value.find((item) => item.id === selectedAddressId.value) || null;
+  });
+
   const checkoutFormComplete = computed(() => {
-    return Boolean(
-      checkoutForm.receiver.trim() &&
-      checkoutForm.mobile.trim() &&
-      checkoutForm.detail.trim()
-    );
+    return Boolean(selectedAddressId.value);
   });
 
   const orders = computed(() => {
@@ -253,7 +260,8 @@ export function useMallApp() {
         loadProducts(),
         loadSeckillProducts(),
         loadOrders(),
-        loadCartItems()
+        loadCartItems(),
+        loadAddresses()
       ]);
     }
   }
@@ -282,6 +290,42 @@ export function useMallApp() {
       ElMessage.error(error.message);
     } finally {
       profileLoading.value = false;
+    }
+  }
+
+  async function loadAddresses() {
+    if (!authState.token) {
+      addresses.value = [];
+      selectedAddressId.value = null;
+      clearCheckoutForm();
+      return;
+    }
+
+    addressesLoading.value = true;
+    try {
+      const list = await fetchUserAddresses();
+      addresses.value = list.map(normalizeAddress);
+
+      if (!addresses.value.length) {
+        selectedAddressId.value = null;
+        clearCheckoutForm();
+        return;
+      }
+
+      const matchedAddress = addresses.value.find((item) => item.id === selectedAddressId.value);
+      const fallbackAddress =
+        matchedAddress ||
+        addresses.value.find((item) => item.isDefault) ||
+        addresses.value[0];
+
+      selectedAddressId.value = fallbackAddress?.id ?? null;
+    } catch (error) {
+      addresses.value = [];
+      selectedAddressId.value = null;
+      clearCheckoutForm();
+      ElMessage.error(error.message);
+    } finally {
+      addressesLoading.value = false;
     }
   }
 
@@ -326,6 +370,7 @@ export function useMallApp() {
       ]);
       normalOrders.value = normal;
       seckillOrders.value = seckill;
+      syncPendingCheckoutOrder(normal);
     } catch (error) {
       ElMessage.error(error.message);
     } finally {
@@ -354,7 +399,8 @@ export function useMallApp() {
       loadProducts(),
       loadSeckillProducts(),
       loadOrders(),
-      loadCartItems()
+      loadCartItems(),
+      loadAddresses()
     ]);
   }
 
@@ -676,9 +722,8 @@ export function useMallApp() {
       ElMessage.warning("购物车里还没有可结算的普通商品");
       return;
     }
-
-    const addressSnapshot = buildAddressSnapshot();
-    if (addressSnapshot === false) {
+    if (!selectedAddressId.value) {
+      ElMessage.warning("请选择收货地址后再提交订单");
       return;
     }
 
@@ -686,7 +731,7 @@ export function useMallApp() {
     try {
       const order = await checkoutNormalOrder({
         remark: checkoutForm.remark || undefined,
-        addressSnapshot: addressSnapshot || undefined
+        addressId: selectedAddressId.value
       });
 
       clearCheckoutForm();
@@ -700,14 +745,44 @@ export function useMallApp() {
     }
   }
 
+  async function createPendingCheckoutOrder() {
+    if (!selectedNormalCartItems.value.length) {
+      ElMessage.warning("请先勾选需要结算的商品");
+      return null;
+    }
+    if (!selectedAddressId.value) {
+      ElMessage.warning("请选择收货地址后再支付");
+      return null;
+    }
+    if (pendingCheckoutOrder.value && pendingCheckoutOrder.value.status === 0) {
+      return pendingCheckoutOrder.value;
+    }
+
+    checkoutLoading.value = true;
+    try {
+      const order = await checkoutNormalOrder({
+        remark: checkoutForm.remark || undefined,
+        addressId: selectedAddressId.value
+      });
+      await Promise.all([loadProducts(), loadOrders(), loadCartItems()]);
+      pendingCheckoutOrder.value = normalizeOrder(order, "normal");
+      ElMessage.success(`普通订单已创建，订单号 ${order.orderNo}`);
+      return pendingCheckoutOrder.value;
+    } catch (error) {
+      ElMessage.error(error.message);
+      return null;
+    } finally {
+      checkoutLoading.value = false;
+    }
+  }
+
   async function submitCheckoutAndPay() {
     if (!selectedNormalCartItems.value.length) {
       ElMessage.warning("请先勾选需要结算的商品");
       return null;
     }
-
-    const addressSnapshot = buildAddressSnapshot(true);
-    if (addressSnapshot === false) {
+    if (!selectedAddressId.value) {
+      ElMessage.warning("请选择收货地址后再支付");
       return null;
     }
 
@@ -715,7 +790,7 @@ export function useMallApp() {
     try {
       const order = await checkoutNormalOrder({
         remark: checkoutForm.remark || undefined,
-        addressSnapshot: addressSnapshot || undefined
+        addressId: selectedAddressId.value
       });
       const paidOrder = await payNormalOrder(order.id);
 
@@ -747,10 +822,69 @@ export function useMallApp() {
       if (selectedOrder.value?.id === normalized.id && selectedOrder.value?.orderType === normalized.orderType) {
         selectedOrder.value = normalizeOrder(paidOrder, normalized.orderType);
       }
+      if (pendingCheckoutOrder.value?.id === normalized.id && normalized.orderType === "normal") {
+        pendingCheckoutOrder.value = null;
+      }
       return paidOrder;
     } catch (error) {
       ElMessage.error(error.message);
       throw error;
+    }
+  }
+
+  function holdPendingCheckoutOrder() {
+    if (!pendingCheckoutOrder.value || pendingCheckoutOrder.value.status !== 0) {
+      pendingCheckoutOrder.value = null;
+      return null;
+    }
+
+    const heldOrder = pendingCheckoutOrder.value;
+    pendingCheckoutOrder.value = null;
+    ElMessage.info("订单已保留为待支付，可在我的订单继续支付");
+    return heldOrder;
+  }
+
+  async function cancelOrder(order) {
+    const normalized = normalizeOrder(order, order.orderType);
+    if (normalized.orderType !== "normal") {
+      ElMessage.warning("当前仅支持取消普通订单");
+      return null;
+    }
+    if (!isOrderPayable(normalized)) {
+      ElMessage.warning("当前订单状态不允许取消");
+      return null;
+    }
+
+    try {
+      await ElMessageBox.confirm(
+        "取消后订单会变成已取消，系统会自动回补商品库存，是否继续？",
+        "取消订单",
+        {
+          type: "warning",
+          confirmButtonText: "确认取消",
+          cancelButtonText: "再看看"
+        }
+      );
+    } catch {
+      return null;
+    }
+
+    try {
+      const cancelledOrder = await cancelNormalOrder(normalized.id);
+      await Promise.all([loadProducts(), loadOrders(), loadCartItems()]);
+
+      if (selectedOrder.value?.id === normalized.id && selectedOrder.value?.orderType === normalized.orderType) {
+        selectedOrder.value = normalizeOrder(cancelledOrder, normalized.orderType);
+      }
+      if (pendingCheckoutOrder.value?.id === normalized.id) {
+        pendingCheckoutOrder.value = null;
+      }
+
+      ElMessage.success("订单已取消");
+      return normalizeOrder(cancelledOrder, "normal");
+    } catch (error) {
+      ElMessage.error(error.message);
+      return null;
     }
   }
 
@@ -809,47 +943,60 @@ export function useMallApp() {
   }
 
   function getAddressSummary(order) {
-    const snapshot = order.addressSnapshot;
-    if (!snapshot) {
-      return "未填写收货地址";
+    const parts = [order.receiver, order.mobile, order.detail].filter(Boolean);
+    return parts.length ? parts.join(" / ") : "未填写收货地址";
+  }
+
+  function getOrderStatusNote(order) {
+    const normalized = normalizeOrder(order, order?.orderType);
+    if (!normalized) {
+      return "";
     }
 
-    try {
-      const address = typeof snapshot === "string" ? JSON.parse(snapshot) : snapshot;
-      return [address.receiver, address.mobile, address.detail].filter(Boolean).join(" · ");
-    } catch {
-      return snapshot;
+    if (normalized.status === 2) {
+      const reason = normalized.cancelReason || "订单已取消";
+      if (normalized.cancelTime) {
+        return `${reason}，取消时间 ${formatDateTime(normalized.cancelTime)}`;
+      }
+      return reason;
+    }
+
+    if (normalized.status === 1 && normalized.payTime) {
+      return `支付时间 ${formatDateTime(normalized.payTime)}`;
+    }
+
+    if (normalized.status === 0) {
+      return normalized.orderType === "normal"
+        ? "当前订单待支付，可继续支付或取消订单"
+        : "当前订单待支付，可继续支付";
+    }
+
+    return "";
+  }
+
+  function handleCheckoutAddressChange(addressId) {
+    selectedAddressId.value = addressId ?? null;
+  }
+
+  function syncPendingCheckoutOrder(normalOrderList = []) {
+    if (!pendingCheckoutOrder.value) {
+      return;
+    }
+
+    const latestOrder = normalOrderList.find((order) => order.id === pendingCheckoutOrder.value.id);
+    if (!latestOrder) {
+      pendingCheckoutOrder.value = null;
+      return;
+    }
+
+    pendingCheckoutOrder.value = normalizeOrder(latestOrder, "normal");
+    if (pendingCheckoutOrder.value.status !== 0) {
+      pendingCheckoutOrder.value = null;
     }
   }
 
   function clearCheckoutForm() {
-    checkoutForm.receiver = "";
-    checkoutForm.mobile = "";
-    checkoutForm.detail = "";
     checkoutForm.remark = "";
-  }
-
-  function buildAddressSnapshot(required = false) {
-    const receiver = checkoutForm.receiver.trim();
-    const mobile = checkoutForm.mobile.trim();
-    const detail = checkoutForm.detail.trim();
-    const hasAny = Boolean(receiver || mobile || detail);
-    const hasAll = Boolean(receiver && mobile && detail);
-
-    if (!hasAny && !required) {
-      return null;
-    }
-
-    if (!hasAll) {
-      ElMessage.warning("收货人、手机号和地址请一起填写");
-      return false;
-    }
-
-    return JSON.stringify({
-      receiver,
-      mobile,
-      detail
-    });
   }
 
   function upsertCartItem(serverItem) {
@@ -866,6 +1013,8 @@ export function useMallApp() {
     authState,
     profile,
     profileLoading,
+    addresses,
+    addressesLoading,
     products,
     seckillProducts,
     normalOrders,
@@ -901,6 +1050,9 @@ export function useMallApp() {
     checkoutSummary,
     orderStats,
     checkoutForm,
+    pendingCheckoutOrder,
+    selectedAddress,
+    selectedAddressId,
     profileDisplayName,
     init,
     dispose,
@@ -909,6 +1061,7 @@ export function useMallApp() {
     loadSeckillProducts,
     loadOrders,
     loadCartItems,
+    loadAddresses,
     refreshMallData,
     applyCategoryFilter,
     clearProductFilters,
@@ -926,14 +1079,19 @@ export function useMallApp() {
     isInCart,
     getCartItemPrice,
     checkoutNormalCart,
+    createPendingCheckoutOrder,
     submitCheckoutAndPay,
+    holdPendingCheckoutOrder,
     payOrder,
+    cancelOrder,
     fetchAndToastPayStatus,
     submitPasswordUpdate,
     getOrderDisplayAmount,
     isOrderPayable,
     getOrderSummary,
     getAddressSummary,
+    getOrderStatusNote,
+    handleCheckoutAddressChange,
     getOrderStatusText
   };
 }
@@ -965,6 +1123,18 @@ function normalizeCartItem(item) {
     itemAmount: item.itemAmount ?? null,
     createTime: item.createTime,
     updateTime: item.updateTime
+  };
+}
+
+function normalizeAddress(address) {
+  return {
+    id: address.id,
+    receiver: address.receiver ?? "",
+    mobile: address.mobile ?? "",
+    detail: address.detail ?? "",
+    isDefault: Boolean(address.isDefault),
+    createTime: address.createTime,
+    updateTime: address.updateTime
   };
 }
 

@@ -44,6 +44,11 @@ export async function payNormalOrder(id) {
   return response.data.data;
 }
 
+export async function cancelNormalOrder(id) {
+  const response = await gatewayClient.post(`/order/normal-orders/${id}/cancel`);
+  return response.data.data;
+}
+
 export async function fetchNormalPayStatus(id) {
   const response = await gatewayClient.get(`/order/normal-orders/${id}/pay-status`);
   return response.data.data;

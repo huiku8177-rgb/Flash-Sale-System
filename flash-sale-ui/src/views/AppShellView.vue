@@ -1,4 +1,5 @@
 <script setup>
+import { ArrowDown } from "@element-plus/icons-vue";
 import { computed, inject } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
@@ -20,20 +21,40 @@ const mallApp = inject("mallApp");
 const navItems = [
   { label: "首页", routeName: "app-home" },
   { label: "秒杀", routeName: "app-flash" },
-  { label: "购物车", routeName: "app-cart" },
-  { label: "个人中心", routeName: "app-profile" }
+  { label: "购物车", routeName: "app-cart" }
+];
+
+const profileMenuItems = [
+  { label: "个人中心", routeName: "app-profile" },
+  { label: "我的订单", routeName: "app-orders" },
+  { label: "账户信息", routeName: "app-account-profile" },
+  { label: "修改密码", routeName: "app-account-security" }
 ];
 
 const hotKeywords = ["耳机", "键盘", "零食", "显示器", "饮料"];
+
+const isAuthenticated = computed(() => Boolean(mallApp.authState.token));
 
 const currentTitle = computed(() => {
   const mapping = {
     "app-home": "首页推荐",
     "app-flash": "秒杀会场",
     "app-cart": "购物车",
-    "app-profile": "个人中心"
+    "app-profile": "个人中心",
+    "app-orders": "我的订单",
+    "app-account-profile": "账户信息",
+    "app-account-security": "修改密码"
   };
   return mapping[route.name] || "Flash Sale Mall";
+});
+
+const isProfileRoute = computed(() => {
+  return [
+    "app-profile",
+    "app-orders",
+    "app-account-profile",
+    "app-account-security"
+  ].includes(route.name);
 });
 
 const productApiPath = computed(() => {
@@ -66,6 +87,14 @@ async function handleLogout() {
   }
 }
 
+function goLogin() {
+  router.push({ name: "login" });
+}
+
+function goRegister() {
+  router.push({ name: "login", query: { mode: "register" } });
+}
+
 async function handleSearch() {
   await mallApp.loadProducts();
   router.push({ name: "app-home" });
@@ -83,6 +112,18 @@ function jumpNav(routeName) {
   router.push({ name: routeName });
 }
 
+function handleProfileCommand(routeName) {
+  router.push({ name: routeName });
+}
+
+function handleProfileEntry() {
+  if (!isAuthenticated.value) {
+    goLogin();
+    return;
+  }
+  router.push({ name: "app-profile" });
+}
+
 function fillKeyword(keyword) {
   searchKeyword.value = keyword;
   handleSearch();
@@ -94,14 +135,42 @@ function fillKeyword(keyword) {
     <div class="top-utility-bar">
       <div class="utility-inner">
         <div class="utility-links">
-          <span>欢迎回来，{{ mallApp.profileDisplayName }}</span>
-          <button type="button" @click="jumpNav('app-profile')">我的中心</button>
+          <template v-if="isAuthenticated">
+            <span>欢迎回来，{{ mallApp.profileDisplayName }}</span>
+            <el-dropdown trigger="hover" @command="handleProfileCommand">
+              <button type="button" class="utility-menu-button">
+                我的中心
+                <el-icon class="utility-menu-icon"><ArrowDown /></el-icon>
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    v-for="item in profileMenuItems"
+                    :key="item.routeName"
+                    :command="item.routeName"
+                  >
+                    {{ item.label }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </template>
+          <template v-else>
+            <span>欢迎来到 Flash Sale Mall</span>
+            <button type="button" @click="goLogin">请登录</button>
+            <button type="button" @click="goRegister">免费注册</button>
+          </template>
           <button type="button" @click="jumpNav('app-cart')">购物车</button>
           <button type="button" @click="jumpNav('app-flash')">秒杀频道</button>
         </div>
+
         <div class="utility-links">
           <span>当前页面：{{ currentTitle }}</span>
-          <button type="button" @click="handleLogout">退出登录</button>
+          <button v-if="isAuthenticated" type="button" @click="handleLogout">退出登录</button>
+          <template v-else>
+            <button type="button" @click="goLogin">登录</button>
+            <button type="button" @click="goRegister">注册</button>
+          </template>
         </div>
       </div>
     </div>
@@ -152,6 +221,7 @@ function fillKeyword(keyword) {
     <nav class="channel-bar">
       <div class="channel-inner">
         <div class="channel-title">全部频道</div>
+
         <button
           v-for="item in navItems"
           :key="item.routeName"
@@ -161,6 +231,38 @@ function fillKeyword(keyword) {
           @click="jumpNav(item.routeName)"
         >
           {{ item.label }}
+        </button>
+
+        <template v-if="isAuthenticated">
+          <el-dropdown trigger="hover" @command="handleProfileCommand">
+            <button
+              type="button"
+              class="channel-link channel-link-menu"
+              :class="{ active: isProfileRoute }"
+            >
+              个人中心
+              <el-icon><ArrowDown /></el-icon>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-for="item in profileMenuItems"
+                  :key="item.routeName"
+                  :command="item.routeName"
+                >
+                  {{ item.label }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </template>
+        <button
+          v-else
+          type="button"
+          class="channel-link channel-link-menu"
+          @click="handleProfileEntry"
+        >
+          登录 / 注册
         </button>
       </div>
     </nav>
@@ -173,25 +275,37 @@ function fillKeyword(keyword) {
       <aside class="portal-sidebar">
         <section class="sidebar-card">
           <p class="eyebrow">Account Snapshot</p>
-          <h3>{{ mallApp.profileDisplayName }}</h3>
-          <div class="sidebar-metrics">
-            <div>
-              <span>用户 ID</span>
-              <strong>{{ mallApp.authState.userId }}</strong>
+          <template v-if="isAuthenticated">
+            <h3>{{ mallApp.profileDisplayName }}</h3>
+            <div class="sidebar-metrics">
+              <div>
+                <span>用户 ID</span>
+                <strong>{{ mallApp.authState.userId }}</strong>
+              </div>
+              <div>
+                <span>普通订单</span>
+                <strong>{{ mallApp.normalOrders.length }}</strong>
+              </div>
+              <div>
+                <span>秒杀订单</span>
+                <strong>{{ mallApp.seckillOrders.length }}</strong>
+              </div>
+              <div>
+                <span>购物车金额</span>
+                <strong>{{ formatCurrency(mallApp.cartSummary.total) }}</strong>
+              </div>
             </div>
-            <div>
-              <span>普通订单</span>
-              <strong>{{ mallApp.normalOrders.length }}</strong>
+          </template>
+          <template v-else>
+            <h3>游客浏览中</h3>
+            <p class="sidebar-guest-copy">
+              你可以先浏览首页和秒杀商品，登录后再使用购物车、结算、个人中心和订单功能。
+            </p>
+            <div class="sidebar-guest-actions">
+              <el-button type="danger" @click="goLogin">立即登录</el-button>
+              <el-button plain @click="goRegister">注册账号</el-button>
             </div>
-            <div>
-              <span>秒杀订单</span>
-              <strong>{{ mallApp.seckillOrders.length }}</strong>
-            </div>
-            <div>
-              <span>购物车金额</span>
-              <strong>{{ formatCurrency(mallApp.cartSummary.total) }}</strong>
-            </div>
-          </div>
+          </template>
         </section>
 
         <section class="sidebar-card">
@@ -200,26 +314,33 @@ function fillKeyword(keyword) {
               <p class="eyebrow">Latest Orders</p>
               <h3>最近订单</h3>
             </div>
-            <el-button text @click="jumpNav('app-profile')">更多</el-button>
+            <el-button text @click="jumpNav('app-orders')">更多</el-button>
           </div>
           <div class="sidebar-order-list">
-            <article
-              v-for="order in mallApp.recentOrders"
-              :key="`${order.orderType}-${order.id}`"
-              class="sidebar-order-item"
-            >
-              <div>
-                <strong>{{ order.orderNo || `#${order.id}` }}</strong>
-                <small>{{ formatDateTime(order.createTime) }}</small>
-              </div>
-              <div class="sidebar-order-meta">
-                <span>{{ getOrderTypeText(order.orderType) }}</span>
-                <button type="button" @click="mallApp.openOrder(order)">详情</button>
-              </div>
-            </article>
+            <template v-if="isAuthenticated">
+              <article
+                v-for="order in mallApp.recentOrders"
+                :key="`${order.orderType}-${order.id}`"
+                class="sidebar-order-item"
+              >
+                <div>
+                  <strong>{{ order.orderNo || `#${order.id}` }}</strong>
+                  <small>{{ formatDateTime(order.createTime) }}</small>
+                </div>
+                <div class="sidebar-order-meta">
+                  <span>{{ getOrderTypeText(order.orderType) }}</span>
+                  <button type="button" @click="mallApp.openOrder(order)">详情</button>
+                </div>
+              </article>
+              <el-empty
+                v-if="!mallApp.recentOrders.length && !mallApp.ordersLoading"
+                description="暂无订单"
+                :image-size="80"
+              />
+            </template>
             <el-empty
-              v-if="!mallApp.recentOrders.length && !mallApp.ordersLoading"
-              description="暂无订单"
+              v-else
+              description="登录后可查看最近订单"
               :image-size="80"
             />
           </div>
@@ -234,17 +355,24 @@ function fillKeyword(keyword) {
             <el-button text @click="jumpNav('app-cart')">查看</el-button>
           </div>
           <div class="sidebar-cart-list">
-            <article
-              v-for="item in mallApp.cartItems.slice(0, 3)"
-              :key="item.cartKey"
-              class="sidebar-cart-item"
-            >
-              <strong>{{ item.name }}</strong>
-              <small>x{{ item.quantity }} · {{ formatCurrency(mallApp.getCartItemPrice(item)) }}</small>
-            </article>
+            <template v-if="isAuthenticated">
+              <article
+                v-for="item in mallApp.cartItems.slice(0, 3)"
+                :key="item.cartKey"
+                class="sidebar-cart-item"
+              >
+                <strong>{{ item.name }}</strong>
+                <small>x{{ item.quantity }} · {{ formatCurrency(mallApp.getCartItemPrice(item)) }}</small>
+              </article>
+              <el-empty
+                v-if="!mallApp.cartItems.length"
+                description="购物车为空"
+                :image-size="80"
+              />
+            </template>
             <el-empty
-              v-if="!mallApp.cartItems.length"
-              description="购物车为空"
+              v-else
+              description="登录后可保存购物车商品"
               :image-size="80"
             />
           </div>
@@ -324,10 +452,10 @@ function fillKeyword(keyword) {
                   mallApp.currentTime
                 ) }}
               </p>
-              <p v-else>主图：{{ mallApp.productDetail.mainImage || "当前未配置" }}</p>
-              <p v-if="mallApp.productDetailType === 'normal'">
-                {{ mallApp.productDetail.detail || "当前商品详情文案尚未补充。" }}
-              </p>
+              <template v-else>
+                <p>主图：{{ mallApp.productDetail.mainImage || "当前未配置" }}</p>
+                <p>{{ mallApp.productDetail.detail || "当前商品详情文案尚未补充。" }}</p>
+              </template>
             </div>
 
             <div class="dialog-actions">
@@ -405,6 +533,9 @@ function fillKeyword(keyword) {
                 <h3>普通订单信息</h3>
                 <p>收货地址：{{ mallApp.getAddressSummary(mallApp.selectedOrder) }}</p>
                 <p>备注：{{ mallApp.selectedOrder.remark || "无" }}</p>
+                <p v-if="mallApp.getOrderStatusNote(mallApp.selectedOrder)">
+                  状态说明：{{ mallApp.getOrderStatusNote(mallApp.selectedOrder) }}
+                </p>
               </div>
               <div class="order-item-list">
                 <article
@@ -437,6 +568,12 @@ function fillKeyword(keyword) {
               <div class="dialog-actions-right">
                 <el-button @click="mallApp.fetchAndToastPayStatus(mallApp.selectedOrder)">
                   查询支付状态
+                </el-button>
+                <el-button
+                  v-if="mallApp.isOrderPayable(mallApp.selectedOrder) && mallApp.selectedOrder.orderType === 'normal'"
+                  @click="mallApp.cancelOrder(mallApp.selectedOrder)"
+                >
+                  取消订单
                 </el-button>
                 <el-button
                   v-if="mallApp.isOrderPayable(mallApp.selectedOrder)"

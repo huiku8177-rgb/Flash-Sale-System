@@ -1,9 +1,9 @@
 package com.flashsale.productservice.service.impl;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.flashsale.common.domain.Result;
 import com.flashsale.common.domain.ResultCode;
+import com.flashsale.common.util.AddressUtils;
+import com.flashsale.productservice.client.AuthAddressClient;
 import com.flashsale.productservice.client.OrderInternalClient;
 import com.flashsale.productservice.domain.dto.CreateNormalOrderItemDTO;
 import com.flashsale.productservice.domain.dto.CreateNormalOrderRequestDTO;
@@ -12,13 +12,14 @@ import com.flashsale.productservice.domain.dto.ProductQueryDTO;
 import com.flashsale.productservice.domain.vo.CartItemVO;
 import com.flashsale.productservice.domain.vo.NormalOrderVO;
 import com.flashsale.productservice.domain.vo.ProductVO;
+import com.flashsale.productservice.domain.vo.UserAddressVO;
 import com.flashsale.productservice.mapper.CartMapper;
 import com.flashsale.productservice.mapper.ProductMapper;
+import com.flashsale.productservice.service.ProductOrderLocalTxService;
 import com.flashsale.productservice.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
@@ -47,14 +48,9 @@ public class ProductServiceImpl implements ProductService {
     private final ProductMapper productMapper;
     private final CartMapper cartMapper;
     private final OrderInternalClient orderInternalClient;
-    private final ObjectMapper objectMapper;
+    private final AuthAddressClient authAddressClient;
+    private final ProductOrderLocalTxService productOrderLocalTxService;
 
-    /**
-     * 列表商品。
-     *
-     * @param queryDTO 查询参数
-     * @return 商品列表
-     */
     @Override
     public Result<List<ProductVO>> listProducts(ProductQueryDTO queryDTO) {
         if (queryDTO == null) {
@@ -68,14 +64,9 @@ public class ProductServiceImpl implements ProductService {
         return Result.success(productMapper.listProducts(queryDTO));
     }
 
-    /**
-     * 获取商品详情。
-     *
-     * @param id 商品ID
-     * @return 商品详情
-     */
     @Override
     public Result<ProductVO> getProductDetail(Long id) {
+        log.info("获取商品详情，商品ID={}", id);
         if (id == null) {
             return Result.error(ResultCode.PARAM_ERROR, "商品ID不能为空");
         }
@@ -88,17 +79,11 @@ public class ProductServiceImpl implements ProductService {
         return Result.success(product);
     }
 
-    /**
-     * 基于购物车已选商品创建普通订单。
-     *
-     * @param userId 用户ID
-     * @param checkoutDTO 订单参数
-     * @return 订单信息
-     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
-    public Result<NormalOrderVO> createNormalOrder(Long userId,
-                                                   NormalOrderCheckoutDTO checkoutDTO) {
+    public Result<NormalOrderVO> createNormalOrder(Long userId, NormalOrderCheckoutDTO checkoutDTO) {
+        if (userId == null) {
+            return Result.error(ResultCode.UNAUTHORIZED);
+        }
         if (checkoutDTO == null) {
             return Result.error(ResultCode.PARAM_ERROR, "请求参数不能为空");
         }
@@ -108,9 +93,9 @@ public class ProductServiceImpl implements ProductService {
             return Result.error(ResultCode.PARAM_ERROR, "请至少勾选一件购物车商品");
         }
 
-        String addressSnapshot = normalizeAddressSnapshot(checkoutDTO.getAddressSnapshot());
-        if (StringUtils.hasText(checkoutDTO.getAddressSnapshot()) && addressSnapshot == null) {
-            return Result.error(ResultCode.PARAM_ERROR, "地址快照必须是合法的JSON");
+        UserAddressVO address = getValidatedAddress(userId, checkoutDTO.getAddressId());
+        if (address == null) {
+            return Result.error(ResultCode.BUSINESS_ERROR, "收货地址不存在或不可用");
         }
 
         BigDecimal totalAmount = BigDecimal.ZERO;
@@ -157,11 +142,12 @@ public class ProductServiceImpl implements ProductService {
             return Result.error(ResultCode.PARAM_ERROR, "请至少勾选一件购物车商品");
         }
 
-        for (Map.Entry<Long, Integer> entry : mergedItems.entrySet()) {
-            int updated = productMapper.decreaseStock(entry.getKey(), entry.getValue());
-            if (updated <= 0) {
-                throw new IllegalStateException("扣减普通商品库存失败，商品ID=" + entry.getKey());
-            }
+        // 先在商品服务本地事务里预占库存，避免远程建单成功前库存已被并发抢空。
+        try {
+            productOrderLocalTxService.reserveStock(mergedItems);
+        } catch (Exception ex) {
+            log.warn("预占普通商品库存失败，userId={}, mergedItems={}", userId, mergedItems, ex);
+            return Result.error(ResultCode.STOCK_EMPTY, "下单失败，部分商品库存不足，请刷新后重试");
         }
 
         String orderNo = generateOrderNo();
@@ -171,33 +157,36 @@ public class ProductServiceImpl implements ProductService {
         requestDTO.setTotalAmount(totalAmount);
         requestDTO.setPayAmount(totalAmount);
         requestDTO.setRemark(trimToNull(checkoutDTO.getRemark()));
-        requestDTO.setAddressSnapshot(addressSnapshot);
+        requestDTO.setReceiver(address.getReceiver());
+        requestDTO.setMobile(address.getMobile());
+        requestDTO.setDetail(address.getDetail());
         requestDTO.setItems(orderItems);
 
         try {
+            // 远程建单成功后再清理购物车；如果请求超时，则优先按 orderNo 回查兜底，避免重复建单。
             Result<NormalOrderVO> createResult = orderInternalClient.createNormalOrder(requestDTO);
             if (isSuccess(createResult)) {
-                removeCheckedOutCartItems(userId, cartItemIds);
+                cleanupCheckedOutCartItems(userId, cartItemIds, orderNo);
                 return Result.success(createResult.getData());
             }
 
             Result<NormalOrderVO> existingOrderResult = findByOrderNo(userId, orderNo);
             if (isSuccess(existingOrderResult)) {
-                removeCheckedOutCartItems(userId, cartItemIds);
+                cleanupCheckedOutCartItems(userId, cartItemIds, orderNo);
                 return Result.success(existingOrderResult.getData());
             }
 
-            restoreStock(mergedItems);
+            compensateStock(mergedItems, userId, orderNo);
             String message = createResult == null ? "普通订单创建失败" : createResult.getMessage();
             return Result.error(ResultCode.SERVER_ERROR, StringUtils.hasText(message) ? message : "普通订单创建失败");
         } catch (Exception ex) {
             Result<NormalOrderVO> existingOrderResult = findByOrderNo(userId, orderNo);
             if (isSuccess(existingOrderResult)) {
-                removeCheckedOutCartItems(userId, cartItemIds);
+                cleanupCheckedOutCartItems(userId, cartItemIds, orderNo);
                 return Result.success(existingOrderResult.getData());
             }
 
-            restoreStock(mergedItems);
+            compensateStock(mergedItems, userId, orderNo);
             log.error("调用订单服务创建普通订单失败，userId={}, orderNo={}", userId, orderNo, ex);
             return Result.error(ResultCode.SERVER_ERROR, "普通订单创建失败");
         }
@@ -218,17 +207,57 @@ public class ProductServiceImpl implements ProductService {
                 && result.getData() != null;
     }
 
-    private void restoreStock(Map<Long, Integer> mergedItems) {
-        for (Map.Entry<Long, Integer> entry : mergedItems.entrySet()) {
-            productMapper.increaseStock(entry.getKey(), entry.getValue());
+    private void compensateStock(Map<Long, Integer> mergedItems, Long userId, String orderNo) {
+        try {
+            productOrderLocalTxService.restoreStock(mergedItems);
+        } catch (Exception ex) {
+            log.error("普通订单失败后补偿库存失败，userId={}, orderNo={}, mergedItems={}", userId, orderNo, mergedItems, ex);
         }
     }
 
-    private void removeCheckedOutCartItems(Long userId, List<Long> cartItemIds) {
-        if (CollectionUtils.isEmpty(cartItemIds)) {
-            return;
+    private void cleanupCheckedOutCartItems(Long userId, List<Long> cartItemIds, String orderNo) {
+        try {
+            productOrderLocalTxService.removeCheckedOutCartItems(userId, cartItemIds);
+        } catch (Exception ex) {
+            log.error("普通订单创建成功后删除购物车失败，userId={}, orderNo={}, cartItemIds={}", userId, orderNo, cartItemIds, ex);
+            try {
+                productOrderLocalTxService.unselectCartItems(userId, cartItemIds);
+            } catch (Exception secondaryEx) {
+                log.error("普通订单创建成功后取消购物车勾选状态也失败，userId={}, orderNo={}, cartItemIds={}",
+                        userId, orderNo, cartItemIds, secondaryEx);
+            }
         }
-        cartMapper.deleteCartItemsByIds(userId, cartItemIds);
+    }
+
+    private UserAddressVO getValidatedAddress(Long userId, Long addressId) {
+        if (addressId == null) {
+            return null;
+        }
+
+        try {
+            Result<UserAddressVO> addressResult = authAddressClient.getAddressDetail(userId, addressId);
+            if (addressResult == null
+                    || addressResult.getCode() != ResultCode.SUCCESS.getCode()
+                    || addressResult.getData() == null) {
+                return null;
+            }
+
+            UserAddressVO address = addressResult.getData();
+            String receiver = AddressUtils.trimToNull(address.getReceiver());
+            String mobile = AddressUtils.trimToNull(address.getMobile());
+            String detail = AddressUtils.trimToNull(address.getDetail());
+            if (!AddressUtils.hasRequiredFields(receiver, mobile, detail) || !AddressUtils.isMobileValid(mobile)) {
+                return null;
+            }
+
+            address.setReceiver(receiver);
+            address.setMobile(mobile);
+            address.setDetail(detail);
+            return address;
+        } catch (Exception ex) {
+            log.warn("查询收货地址失败，userId={}, addressId={}", userId, addressId, ex);
+            return null;
+        }
     }
 
     private String generateOrderNo() {
@@ -237,21 +266,6 @@ public class ProductServiceImpl implements ProductService {
 
     private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
-    }
-
-    private String normalizeAddressSnapshot(String addressSnapshot) {
-        String value = trimToNull(addressSnapshot);
-        if (value == null) {
-            return null;
-        }
-
-        try {
-            objectMapper.readTree(value);
-            return value;
-        } catch (JsonProcessingException ex) {
-            log.warn("地址快照不是合法的JSON：{}", value);
-            return null;
-        }
     }
 
     private String getCartProductName(CartItemVO cartItem) {

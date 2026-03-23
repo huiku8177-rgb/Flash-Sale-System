@@ -36,6 +36,10 @@ public class NormalOrderPO {
 
     private String addressSnapshot;
 
+    private String cancelReason;
+
+    private LocalDateTime cancelTime;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

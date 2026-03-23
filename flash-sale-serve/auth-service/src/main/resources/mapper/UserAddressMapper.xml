@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.flashsale.authservice.mapper.UserAddressMapper">
+
+    <resultMap id="UserAddressVOResultMap" type="com.flashsale.authservice.domain.vo.UserAddressVO">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="receiver" column="receiver"/>
+        <result property="mobile" column="mobile"/>
+        <result property="detail" column="detail"/>
+        <result property="isDefault" column="is_default"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <sql id="BaseAddressColumns">
+        id,
+        user_id,
+        receiver,
+        mobile,
+        detail,
+        is_default,
+        create_time,
+        update_time
+    </sql>
+
+    <select id="listByUserId" resultMap="UserAddressVOResultMap">
+        SELECT
+        <include refid="BaseAddressColumns"/>
+        FROM user_address
+        WHERE user_id = #{userId}
+          AND is_deleted = 0
+        ORDER BY is_default DESC, update_time DESC, id DESC
+    </select>
+
+    <select id="findByIdAndUserId" resultType="com.flashsale.authservice.domain.po.UserAddressPO">
+        SELECT id, user_id, receiver, mobile, detail, is_default, is_deleted, create_time, update_time
+        FROM user_address
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND is_deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="getDetailByIdAndUserId" resultMap="UserAddressVOResultMap">
+        SELECT
+        <include refid="BaseAddressColumns"/>
+        FROM user_address
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND is_deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findDefaultByUserId" resultMap="UserAddressVOResultMap">
+        SELECT
+        <include refid="BaseAddressColumns"/>
+        FROM user_address
+        WHERE user_id = #{userId}
+          AND is_deleted = 0
+          AND is_default = 1
+        LIMIT 1
+    </select>
+
+    <insert id="insert" parameterType="com.flashsale.authservice.domain.po.UserAddressPO" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user_address (
+            user_id,
+            receiver,
+            mobile,
+            detail,
+            is_default
+        ) VALUES (
+            #{userId},
+            #{receiver},
+            #{mobile},
+            #{detail},
+            #{isDefault}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.flashsale.authservice.domain.po.UserAddressPO">
+        UPDATE user_address
+        SET receiver = #{receiver},
+            mobile = #{mobile},
+            detail = #{detail},
+            is_default = #{isDefault}
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND is_deleted = 0
+    </update>
+
+    <update id="clearDefaultByUserId">
+        UPDATE user_address
+        SET is_default = 0
+        WHERE user_id = #{userId}
+          AND is_deleted = 0
+          AND is_default = 1
+    </update>
+
+    <update id="markDeleted">
+        UPDATE user_address
+        SET is_deleted = 1,
+            is_default = 0
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND is_deleted = 0
+    </update>
+</mapper>

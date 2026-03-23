@@ -6,14 +6,13 @@ import com.flashsale.orderservice.domain.vo.NormalOrderPayStatusVO;
 import com.flashsale.orderservice.domain.vo.NormalOrderVO;
 
 import java.util.List;
+
 /**
  * @author strive_qin
  * @version 1.0
  * @description NormalOrderService
  * @date 2026/3/20 00:00
  */
-
-
 public interface NormalOrderService {
 
     /**
@@ -61,6 +60,15 @@ public interface NormalOrderService {
     Result<NormalOrderVO> mockPay(Long userId, Long id);
 
     /**
+     * 取消待支付普通订单
+     *
+     * @param userId 用户ID
+     * @param id 订单ID
+     * @return 取消后的订单详情
+     */
+    Result<NormalOrderVO> cancelOrder(Long userId, Long id);
+
+    /**
      * 查询普通订单支付状态
      *
      * @param userId 用户ID
@@ -68,4 +76,11 @@ public interface NormalOrderService {
      * @return 支付状态
      */
     Result<NormalOrderPayStatusVO> getPayStatus(Long userId, Long id);
+
+    /**
+     * 定时取消超时未支付订单
+     *
+     * @return 本次成功取消的订单数量
+     */
+    int cancelTimeoutOrders();
 }

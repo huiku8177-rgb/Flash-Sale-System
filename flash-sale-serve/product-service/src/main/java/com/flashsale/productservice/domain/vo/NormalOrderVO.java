@@ -1,19 +1,19 @@
 package com.flashsale.productservice.domain.vo;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+
 /**
  * @author strive_qin
  * @version 1.0
  * @description NormalOrderVO
  * @date 2026/3/20 00:00
  */
-
-
 @Data
 @Schema(description = "普通订单详情")
 public class NormalOrderVO {
@@ -42,7 +42,16 @@ public class NormalOrderVO {
     @Schema(description = "订单备注", example = "工作日送达")
     private String remark;
 
-    @Schema(description = "地址快照JSON字符串")
+    @Schema(description = "收货人", example = "张三")
+    private String receiver;
+
+    @Schema(description = "手机号", example = "13800000000")
+    private String mobile;
+
+    @Schema(description = "详细地址", example = "上海市浦东新区世纪大道100号")
+    private String detail;
+
+    @JsonIgnore
     private String addressSnapshot;
 
     @Schema(description = "创建时间", example = "2026-03-20T17:30:00")

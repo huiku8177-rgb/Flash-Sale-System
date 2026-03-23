@@ -14,6 +14,8 @@
         <result property="payTime" column="pay_time"/>
         <result property="remark" column="remark"/>
         <result property="addressSnapshot" column="address_snapshot"/>
+        <result property="cancelReason" column="cancel_reason"/>
+        <result property="cancelTime" column="cancel_time"/>
         <result property="createTime" column="create_time"/>
     </resultMap>
 
@@ -27,6 +29,8 @@
         pay_time,
         remark,
         address_snapshot,
+        cancel_reason,
+        cancel_time,
         create_time
     </sql>
 
@@ -39,7 +43,9 @@
             pay_amount,
             pay_time,
             remark,
-            address_snapshot
+            address_snapshot,
+            cancel_reason,
+            cancel_time
         ) VALUES (
             #{orderNo},
             #{userId},
@@ -48,7 +54,9 @@
             #{payAmount},
             #{payTime},
             #{remark},
-            #{addressSnapshot}
+            #{addressSnapshot},
+            #{cancelReason},
+            #{cancelTime}
         )
     </insert>
 
@@ -90,4 +98,44 @@
           AND user_id = #{userId}
           AND order_status = #{expectedStatus}
     </update>
+
+    <update id="updateOrderStatus">
+        UPDATE normal_order
+        SET order_status = #{targetStatus},
+        <choose>
+            <when test="targetStatus == 2">
+                cancel_reason = #{cancelReason},
+                cancel_time = #{cancelTime}
+            </when>
+            <otherwise>
+                cancel_reason = NULL,
+                cancel_time = NULL
+            </otherwise>
+        </choose>
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND order_status = #{expectedStatus}
+    </update>
+
+    <select id="listTimeoutOrders" resultType="com.flashsale.orderservice.domain.po.NormalOrderPO">
+        SELECT
+            id,
+            order_no,
+            user_id,
+            order_status,
+            total_amount,
+            pay_amount,
+            pay_time,
+            remark,
+            address_snapshot,
+            cancel_reason,
+            cancel_time,
+            create_time,
+            update_time
+        FROM normal_order
+        WHERE order_status = #{expectedStatus}
+          AND create_time &lt;= #{deadline}
+        ORDER BY create_time ASC, id ASC
+        LIMIT #{limit}
+    </select>
 </mapper>

@@ -35,6 +35,12 @@ public class NormalOrderPayStatusVO {
     @Schema(description = "支付时间", example = "2026-03-20T18:00:00")
     private LocalDateTime payTime;
 
+    @Schema(description = "取消原因", example = "超时未支付，系统自动取消")
+    private String cancelReason;
+
+    @Schema(description = "取消时间", example = "2026-03-20T17:45:00")
+    private LocalDateTime cancelTime;
+
     @Schema(description = "状态说明", example = "订单已支付")
     private String message;
 }

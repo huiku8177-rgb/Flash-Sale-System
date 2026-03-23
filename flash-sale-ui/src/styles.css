@@ -206,6 +206,18 @@ code {
   cursor: pointer;
 }
 
+.utility-menu-button,
+.channel-link-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.utility-menu-icon,
+.channel-link-menu .el-icon {
+  font-size: 12px;
+}
+
 .utility-links button:hover,
 .hot-keywords button:hover,
 .sidebar-order-meta button:hover,
@@ -361,6 +373,19 @@ code {
   margin-top: 14px;
   display: grid;
   gap: 10px;
+}
+
+.sidebar-guest-copy {
+  margin: 12px 0 0;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.sidebar-guest-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .sidebar-order-list,
@@ -853,6 +878,110 @@ code {
   gap: 14px;
 }
 
+.profile-hub-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+}
+
+.profile-hub-copy {
+  max-width: 760px;
+}
+
+.profile-hub-copy p:last-child {
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.profile-hub-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 18px;
+}
+
+.profile-entry-card {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 80, 0, 0.08), transparent 22%),
+    linear-gradient(180deg, #fff, #fff8f4);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 18px;
+}
+
+.profile-entry-card-wide {
+  background:
+    radial-gradient(circle at top right, rgba(47, 125, 246, 0.08), transparent 22%),
+    radial-gradient(circle at bottom left, rgba(255, 80, 0, 0.08), transparent 20%),
+    linear-gradient(180deg, #fff, #fdfefe);
+}
+
+.profile-entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.profile-entry-head h3 {
+  margin: 0;
+  font-size: 30px;
+  letter-spacing: -0.04em;
+}
+
+.profile-entry-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.profile-entry-metrics,
+.account-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.profile-entry-metrics div,
+.profile-entry-mini div,
+.account-panel-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.profile-entry-metrics span,
+.profile-entry-mini span,
+.account-panel-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.profile-entry-metrics strong,
+.profile-entry-mini strong,
+.account-panel-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 22px;
+}
+
+.profile-entry-dropdown {
+  display: flex;
+  align-items: center;
+}
+
+.profile-entry-mini {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .profile-stat-card {
   padding: 18px;
 }
@@ -1038,6 +1167,16 @@ code {
 .profile-order-head-wide,
 .profile-order-row-wide {
   grid-template-columns: 1.4fr 0.9fr 1.2fr 0.8fr 0.8fr 1fr;
+}
+
+.order-status-block {
+  display: grid;
+  gap: 8px;
+}
+
+.order-status-block small {
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .order-primary strong {
@@ -1232,6 +1371,33 @@ code {
   justify-items: end;
 }
 
+.preview-card-column {
+  display: grid;
+  gap: 14px;
+}
+
+.checkout-address-select {
+  width: 100%;
+}
+
+.checkout-address-option {
+  display: grid;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.checkout-address-option strong {
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.checkout-address-option span,
+.preview-card span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .checkout-paybar {
   display: flex;
   align-items: center;
@@ -1249,4 +1415,96 @@ code {
   display: grid;
   gap: 12px;
   justify-items: end;
+}
+
+.security-form-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.security-form-grid {
+  max-width: 760px;
+}
+
+.security-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pay-confirm-dialog .el-dialog__body {
+  padding-top: 10px;
+}
+
+.pay-confirm-body {
+  display: grid;
+  gap: 18px;
+}
+
+.pay-confirm-section {
+  display: grid;
+  gap: 14px;
+}
+
+.pay-confirm-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pay-confirm-actions {
+  min-width: 360px;
+}
+
+.address-book-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.address-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fff, #fbfcfe);
+  display: grid;
+  gap: 14px;
+}
+
+.address-card-default {
+  border-color: rgba(26, 168, 111, 0.28);
+  box-shadow: 0 14px 28px rgba(26, 168, 111, 0.08);
+}
+
+.address-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.address-card-head strong {
+  display: block;
+  font-size: 18px;
+}
+
+.address-card-head span,
+.address-card p {
+  color: var(--muted);
+}
+
+.address-card p {
+  margin: 0;
+  line-height: 1.8;
+}
+
+.address-card-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.address-manage-form {
+  display: grid;
+  gap: 10px;
 }

@@ -1,10 +1,13 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import AppShellView from "../views/AppShellView.vue";
+import AccountInfoView from "../views/AccountInfoView.vue";
 import CartView from "../views/CartView.vue";
 import CheckoutView from "../views/CheckoutView.vue";
 import FlashSaleView from "../views/FlashSaleView.vue";
 import HomeView from "../views/HomeView.vue";
 import LoginView from "../views/LoginView.vue";
+import OrdersCenterView from "../views/OrdersCenterView.vue";
+import PasswordSecurityView from "../views/PasswordSecurityView.vue";
 import ProfileView from "../views/ProfileView.vue";
 import { authState } from "../stores/auth";
 
@@ -30,6 +33,18 @@ const router = createRouter({
       meta: {
         requiresAuth: true
       }
+    },
+    {
+      path: "/orders",
+      redirect: "/app/profile/orders"
+    },
+    {
+      path: "/account/profile",
+      redirect: "/app/profile/account"
+    },
+    {
+      path: "/account/security",
+      redirect: "/app/profile/security"
     },
     {
       path: "/app",
@@ -61,6 +76,30 @@ const router = createRouter({
           path: "profile",
           name: "app-profile",
           component: ProfileView,
+          meta: {
+            requiresAuth: true
+          }
+        },
+        {
+          path: "profile/orders",
+          name: "app-orders",
+          component: OrdersCenterView,
+          meta: {
+            requiresAuth: true
+          }
+        },
+        {
+          path: "profile/account",
+          name: "app-account-profile",
+          component: AccountInfoView,
+          meta: {
+            requiresAuth: true
+          }
+        },
+        {
+          path: "profile/security",
+          name: "app-account-security",
+          component: PasswordSecurityView,
           meta: {
             requiresAuth: true
           }

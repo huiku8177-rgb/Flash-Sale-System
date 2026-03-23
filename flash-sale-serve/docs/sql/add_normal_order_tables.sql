@@ -11,12 +11,15 @@ CREATE TABLE IF NOT EXISTS normal_order (
     pay_time DATETIME NULL COMMENT 'pay time',
     remark VARCHAR(255) NULL COMMENT 'user remark',
     address_snapshot JSON NULL COMMENT 'shipping address snapshot',
+    cancel_reason VARCHAR(64) NULL COMMENT 'cancel reason',
+    cancel_time DATETIME NULL COMMENT 'cancel time',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'update time',
     UNIQUE KEY uk_normal_order_order_no (order_no),
     KEY idx_normal_order_user_id (user_id),
     KEY idx_normal_order_status (order_status),
-    KEY idx_normal_order_create_time (create_time)
+    KEY idx_normal_order_create_time (create_time),
+    KEY idx_normal_order_status_create_time (order_status, create_time)
 ) COMMENT='normal order table';
 
 -- 普通商品订单明细表

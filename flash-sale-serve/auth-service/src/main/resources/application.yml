@@ -18,9 +18,11 @@ spring:
       config:
         enabled: false
 
-
-
-
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.flashsale.authservice.domain.po,com.flashsale.authservice.domain.vo,com.flashsale.authservice.domain.dto
+  configuration:
+    map-underscore-to-camel-case: true
 flash-sale:
   jwt:
     location: classpath:flash-sale.jks

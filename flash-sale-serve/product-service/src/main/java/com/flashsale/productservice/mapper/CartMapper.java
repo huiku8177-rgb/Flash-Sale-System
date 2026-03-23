@@ -40,4 +40,8 @@ public interface CartMapper {
     int deleteSelectedCartItems(@Param("userId") Long userId);
 
     int deleteCartItemsByIds(@Param("userId") Long userId, @Param("ids") List<Long> ids);
+
+    int updateSelectedByIds(@Param("userId") Long userId,
+                            @Param("ids") List<Long> ids,
+                            @Param("selected") Integer selected);
 }
