@@ -22,6 +22,11 @@ public class SeckillOrderPO {
     private Long id;
 
     /**
+     * 秒杀订单号
+     */
+    private String orderNo;
+
+    /**
      * 用户ID
      */
     private Long userId;

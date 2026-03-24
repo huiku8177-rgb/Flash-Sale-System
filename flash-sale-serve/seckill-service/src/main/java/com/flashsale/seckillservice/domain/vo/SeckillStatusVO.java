@@ -2,14 +2,13 @@ package com.flashsale.seckillservice.domain.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+
 /**
  * @author strive_qin
  * @version 1.0
  * @description SeckillStatusVO
- * @date 2026/3/20 00:00
+ * @date 2026/3/13 17:00
  */
-
-
 @Data
 @Schema(description = "秒杀处理状态")
 public class SeckillStatusVO {
@@ -22,4 +21,7 @@ public class SeckillStatusVO {
 
     @Schema(description = "成功时返回的订单ID", example = "50001")
     private Long orderId;
+
+    @Schema(description = "成功时返回的秒杀订单号", example = "dd54b696cb5e4213839982f4222a2116")
+    private String orderNo;
 }

@@ -45,7 +45,7 @@ const currentTitle = computed(() => {
     "app-account-profile": "账户信息",
     "app-account-security": "修改密码"
   };
-  return mapping[route.name] || "Flash Sale Mall";
+  return mapping[route.name] || "商城首页";
 });
 
 const isProfileRoute = computed(() => {
@@ -57,6 +57,9 @@ const isProfileRoute = computed(() => {
   ].includes(route.name);
 });
 
+// Keep the right-side helper cards only on the homepage.
+const showHomeSidebar = computed(() => route.name === "app-home");
+
 const productApiPath = computed(() => {
   return mallApp.productDetailType === "seckill"
     ? "/seckill-product/products/{id}"
@@ -65,6 +68,12 @@ const productApiPath = computed(() => {
 
 const selectedOrderAmount = computed(() => {
   return mallApp.selectedOrder ? mallApp.getOrderDisplayAmount(mallApp.selectedOrder) : 0;
+});
+
+const seckillPayOrderAmount = computed(() => {
+  return mallApp.pendingSeckillPayOrder
+    ? mallApp.getOrderDisplayAmount(mallApp.pendingSeckillPayOrder)
+    : 0;
 });
 
 const searchKeyword = computed({
@@ -98,7 +107,7 @@ function goRegister() {
 async function handleSearch() {
   await mallApp.loadProducts();
   router.push({ name: "app-home" });
-  ElMessage.success("普通商品列表已按关键词刷新");
+  ElMessage.success("已按关键词刷新商品列表");
 }
 
 async function handleBuyNowFromDetail() {
@@ -122,6 +131,19 @@ function handleProfileEntry() {
     return;
   }
   router.push({ name: "app-profile" });
+}
+
+function handleOrderPay(order) {
+  if (order.orderType === "seckill") {
+    mallApp.openSeckillPayConfirm(order);
+    return;
+  }
+  mallApp.payOrder(order);
+}
+
+function handleSeckillPayConfirmBeforeClose(done) {
+  mallApp.holdPendingSeckillPayOrder();
+  done();
 }
 
 function fillKeyword(keyword) {
@@ -267,51 +289,16 @@ function fillKeyword(keyword) {
       </div>
     </nav>
 
-    <div class="portal-frame">
+    <div class="portal-frame" :class="{ 'portal-frame--home': showHomeSidebar }">
       <main class="portal-main">
         <router-view />
       </main>
 
-      <aside class="portal-sidebar">
-        <section class="sidebar-card">
-          <p class="eyebrow">Account Snapshot</p>
-          <template v-if="isAuthenticated">
-            <h3>{{ mallApp.profileDisplayName }}</h3>
-            <div class="sidebar-metrics">
-              <div>
-                <span>用户 ID</span>
-                <strong>{{ mallApp.authState.userId }}</strong>
-              </div>
-              <div>
-                <span>普通订单</span>
-                <strong>{{ mallApp.normalOrders.length }}</strong>
-              </div>
-              <div>
-                <span>秒杀订单</span>
-                <strong>{{ mallApp.seckillOrders.length }}</strong>
-              </div>
-              <div>
-                <span>购物车金额</span>
-                <strong>{{ formatCurrency(mallApp.cartSummary.total) }}</strong>
-              </div>
-            </div>
-          </template>
-          <template v-else>
-            <h3>游客浏览中</h3>
-            <p class="sidebar-guest-copy">
-              你可以先浏览首页和秒杀商品，登录后再使用购物车、结算、个人中心和订单功能。
-            </p>
-            <div class="sidebar-guest-actions">
-              <el-button type="danger" @click="goLogin">立即登录</el-button>
-              <el-button plain @click="goRegister">注册账号</el-button>
-            </div>
-          </template>
-        </section>
-
+      <aside v-if="showHomeSidebar" class="portal-sidebar">
         <section class="sidebar-card">
           <div class="sidebar-head">
             <div>
-              <p class="eyebrow">Latest Orders</p>
+              <p class="eyebrow">最近订单</p>
               <h3>最近订单</h3>
             </div>
             <el-button text @click="jumpNav('app-orders')">更多</el-button>
@@ -323,7 +310,7 @@ function fillKeyword(keyword) {
                 :key="`${order.orderType}-${order.id}`"
                 class="sidebar-order-item"
               >
-                <div>
+                <div class="sidebar-order-info">
                   <strong>{{ order.orderNo || `#${order.id}` }}</strong>
                   <small>{{ formatDateTime(order.createTime) }}</small>
                 </div>
@@ -349,7 +336,7 @@ function fillKeyword(keyword) {
         <section class="sidebar-card">
           <div class="sidebar-head">
             <div>
-              <p class="eyebrow">Cart Draft</p>
+              <p class="eyebrow">购物车草稿</p>
               <h3>购物车草稿</h3>
             </div>
             <el-button text @click="jumpNav('app-cart')">查看</el-button>
@@ -362,7 +349,7 @@ function fillKeyword(keyword) {
                 class="sidebar-cart-item"
               >
                 <strong>{{ item.name }}</strong>
-                <small>x{{ item.quantity }} · {{ formatCurrency(mallApp.getCartItemPrice(item)) }}</small>
+                <small>数量：x{{ item.quantity }}，金额：{{ formatCurrency(mallApp.getCartItemPrice(item)) }}</small>
               </article>
               <el-empty
                 v-if="!mallApp.cartItems.length"
@@ -459,20 +446,15 @@ function fillKeyword(keyword) {
             </div>
 
             <div class="dialog-actions">
-              <el-button
-                v-if="mallApp.productDetailType === 'normal'"
-                plain
-                @click="handleBuyNowFromDetail"
-              >
-                立即购买
-              </el-button>
-              <el-button
-                v-if="mallApp.productDetailType === 'normal'"
-                type="danger"
-                @click="mallApp.addToCart(mallApp.productDetail, 'normal')"
-              >
-                加入购物车
-              </el-button>
+              <template v-if="mallApp.productDetailType === 'normal'">
+                <el-button plain @click="handleBuyNowFromDetail">立即购买</el-button>
+                <el-button
+                  type="danger"
+                  @click="mallApp.addToCart(mallApp.productDetail, 'normal')"
+                >
+                  加入购物车
+                </el-button>
+              </template>
               <template v-else>
                 <el-button @click="mallApp.addToCart(mallApp.productDetail, 'seckill')">
                   加入草稿
@@ -559,6 +541,9 @@ function fillKeyword(keyword) {
               <h3>秒杀订单信息</h3>
               <p>商品 ID：{{ mallApp.selectedOrder.productId }}</p>
               <p>秒杀价格：{{ formatCurrency(mallApp.selectedOrder.seckillPrice) }}</p>
+              <p v-if="mallApp.getOrderStatusNote(mallApp.selectedOrder)">
+                状态说明：{{ mallApp.getOrderStatusNote(mallApp.selectedOrder) }}
+              </p>
             </div>
 
             <div class="dialog-actions">
@@ -570,7 +555,7 @@ function fillKeyword(keyword) {
                   查询支付状态
                 </el-button>
                 <el-button
-                  v-if="mallApp.isOrderPayable(mallApp.selectedOrder) && mallApp.selectedOrder.orderType === 'normal'"
+                  v-if="mallApp.isOrderPayable(mallApp.selectedOrder)"
                   @click="mallApp.cancelOrder(mallApp.selectedOrder)"
                 >
                   取消订单
@@ -578,7 +563,7 @@ function fillKeyword(keyword) {
                 <el-button
                   v-if="mallApp.isOrderPayable(mallApp.selectedOrder)"
                   type="danger"
-                  @click="mallApp.payOrder(mallApp.selectedOrder)"
+                  @click="handleOrderPay(mallApp.selectedOrder)"
                 >
                   模拟支付
                 </el-button>
@@ -587,6 +572,83 @@ function fillKeyword(keyword) {
           </div>
         </template>
       </el-skeleton>
+    </el-dialog>
+
+    <el-dialog
+      v-model="mallApp.seckillPayConfirmVisible"
+      width="760px"
+      destroy-on-close
+      :close-on-click-modal="false"
+      :before-close="handleSeckillPayConfirmBeforeClose"
+      class="pay-confirm-dialog"
+      title="确认秒杀支付"
+    >
+      <template v-if="mallApp.pendingSeckillPayOrder">
+        <div class="pay-confirm-body">
+          <section class="pay-confirm-section">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">支付项目</p>
+                <h3>秒杀订单详情</h3>
+              </div>
+            </div>
+
+            <article class="checkout-item-card">
+              <div class="cart-thumb checkout-item-thumb">秒杀</div>
+
+              <div class="checkout-item-main">
+                <strong>秒杀商品 #{{ mallApp.pendingSeckillPayOrder.productId }}</strong>
+                <small>订单号 {{ mallApp.pendingSeckillPayOrder.orderNo || mallApp.pendingSeckillPayOrder.id }}</small>
+                <el-tag type="danger" effect="plain">待确认支付</el-tag>
+              </div>
+
+              <div class="checkout-item-meta">
+                <span>状态：{{ getOrderStatusText(mallApp.pendingSeckillPayOrder.status) }}</span>
+                <strong>{{ formatCurrency(seckillPayOrderAmount) }}</strong>
+              </div>
+            </article>
+          </section>
+
+          <section class="pay-confirm-grid">
+            <article class="preview-card">
+              <div>
+                <small>支付说明</small>
+                <strong>确认后立即完成模拟支付</strong>
+                <span>取消支付不会关闭订单，这笔秒杀订单会保留为待支付状态。</span>
+              </div>
+            </article>
+
+            <article class="preview-card">
+              <div>
+                <small>状态说明</small>
+                <strong>{{ mallApp.getOrderStatusNote(mallApp.pendingSeckillPayOrder) || "当前订单待支付" }}</strong>
+                <span>你可以现在完成支付，也可以返回订单中心稍后继续处理。</span>
+              </div>
+            </article>
+
+            <article class="preview-card">
+              <div>
+                <small>支付总额</small>
+                <strong>{{ formatCurrency(seckillPayOrderAmount) }}</strong>
+                <span>本次确认支付 1 件秒杀商品</span>
+              </div>
+            </article>
+          </section>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="dialog-actions-right pay-confirm-actions">
+          <el-button size="large" @click="mallApp.holdPendingSeckillPayOrder()">稍后支付</el-button>
+          <el-button
+            type="danger"
+            size="large"
+            @click="mallApp.confirmSeckillPay()"
+          >
+            确认支付
+          </el-button>
+        </div>
+      </template>
     </el-dialog>
   </div>
 </template>

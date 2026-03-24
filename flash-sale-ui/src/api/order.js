@@ -15,6 +15,11 @@ export async function paySeckillOrder(id) {
   return response.data.data;
 }
 
+export async function cancelSeckillOrder(id) {
+  const response = await gatewayClient.post(`/order/seckill-orders/${id}/cancel`);
+  return response.data.data;
+}
+
 export async function fetchSeckillPayStatus(id) {
   const response = await gatewayClient.get(`/order/seckill-orders/${id}/pay-status`);
   return response.data.data;

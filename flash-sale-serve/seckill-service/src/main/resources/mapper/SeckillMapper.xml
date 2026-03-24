@@ -8,6 +8,7 @@
             resultType="com.flashsale.seckillservice.domain.po.SeckillOrderPO">
         SELECT
             id,
+            order_no,
             user_id,
             product_id,
             seckill_price,

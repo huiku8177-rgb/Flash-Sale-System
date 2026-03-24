@@ -6,28 +6,64 @@
 
     <resultMap id="SeckillOrderVOResultMap" type="com.flashsale.orderservice.domain.vo.SeckillOrderVO">
         <id property="id" column="id"/>
+        <result property="orderNo" column="order_no"/>
         <result property="userId" column="user_id"/>
         <result property="productId" column="product_id"/>
         <result property="seckillPrice" column="seckill_price"/>
         <result property="status" column="status"/>
+        <result property="payTime" column="pay_time"/>
+        <result property="cancelReason" column="cancel_reason"/>
+        <result property="cancelTime" column="cancel_time"/>
         <result property="createTime" column="create_time"/>
     </resultMap>
 
     <sql id="BaseSeckillOrderColumns">
         id,
+        order_no,
         user_id,
         product_id,
         seckill_price,
         status,
+        pay_time,
+        cancel_reason,
+        cancel_time,
         create_time
     </sql>
+
     <insert useGeneratedKeys="true" keyProperty="id" id="insert" parameterType="com.flashsale.orderservice.domain.po.SeckillOrderPO">
-        INSERT INTO seckill_order (user_id, product_id, seckill_price, status)
-        VALUES (#{userId}, #{productId}, #{seckillPrice}, #{status})
+        INSERT INTO seckill_order (
+            user_id,
+            product_id,
+            order_no,
+            seckill_price,
+            status,
+            pay_time,
+            cancel_reason,
+            cancel_time
+        ) VALUES (
+            #{userId},
+            #{productId},
+            #{orderNo},
+            #{seckillPrice},
+            #{status},
+            #{payTime},
+            #{cancelReason},
+            #{cancelTime}
+        )
     </insert>
 
     <select id="getByUserIdAndProductId" resultType="com.flashsale.orderservice.domain.po.SeckillOrderPO">
-        SELECT id, user_id, product_id, seckill_price, status, create_time
+        SELECT
+            id,
+            order_no,
+            user_id,
+            product_id,
+            seckill_price,
+            status,
+            pay_time,
+            cancel_reason,
+            cancel_time,
+            create_time
         FROM seckill_order
         WHERE user_id = #{userId}
           AND product_id = #{productId}
@@ -39,7 +75,7 @@
         <include refid="BaseSeckillOrderColumns"/>
         FROM seckill_order
         WHERE user_id = #{userId}
-        ORDER BY create_time DESC
+        ORDER BY create_time DESC, id DESC
     </select>
 
     <select id="getOrderDetail" resultMap="SeckillOrderVOResultMap">
@@ -48,14 +84,55 @@
         FROM seckill_order
         WHERE id = #{id}
           AND user_id = #{userId}
+        LIMIT 1
     </select>
 
-    <update id="updateStatus">
+    <update id="updatePayStatus">
         UPDATE seckill_order
-        SET status = #{targetStatus}
+        SET status = #{targetStatus},
+            pay_time = #{payTime},
+            cancel_reason = NULL,
+            cancel_time = NULL
         WHERE id = #{id}
           AND user_id = #{userId}
           AND status = #{expectedStatus}
     </update>
+
+    <update id="updateOrderStatus">
+        UPDATE seckill_order
+        SET status = #{targetStatus},
+        <choose>
+            <when test="targetStatus == 2">
+                cancel_reason = #{cancelReason},
+                cancel_time = #{cancelTime}
+            </when>
+            <otherwise>
+                cancel_reason = NULL,
+                cancel_time = NULL
+            </otherwise>
+        </choose>
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND status = #{expectedStatus}
+    </update>
+
+    <select id="listTimeoutOrders" resultType="com.flashsale.orderservice.domain.po.SeckillOrderPO">
+        SELECT
+            id,
+            order_no,
+            user_id,
+            product_id,
+            seckill_price,
+            status,
+            pay_time,
+            cancel_reason,
+            cancel_time,
+            create_time
+        FROM seckill_order
+        WHERE status = #{expectedStatus}
+          AND create_time &lt;= #{deadline}
+        ORDER BY create_time ASC, id ASC
+        LIMIT #{limit}
+    </select>
 
 </mapper>

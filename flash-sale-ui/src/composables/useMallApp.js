@@ -1,4 +1,4 @@
-import { computed, reactive, ref, watch } from "vue";
+﻿import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { fetchUserAddresses } from "../api/address";
 import { fetchCurrentUser, updatePassword } from "../api/auth";
@@ -9,6 +9,7 @@ import {
   updateCartItem
 } from "../api/cart";
 import {
+  cancelSeckillOrder,
   cancelNormalOrder,
   checkoutNormalOrder,
   fetchNormalOrderDetail,
@@ -47,6 +48,8 @@ export function useMallApp() {
   const addresses = ref([]);
   const profile = ref(null);
   const pendingCheckoutOrder = ref(null);
+  const pendingSeckillPayOrder = ref(null);
+  const seckillPayConfirmVisible = ref(false);
 
   const productsLoading = ref(false);
   const seckillProductsLoading = ref(false);
@@ -91,6 +94,8 @@ export function useMallApp() {
         seckillOrders.value = [];
         selectedAddressId.value = null;
         pendingCheckoutOrder.value = null;
+        pendingSeckillPayOrder.value = null;
+        seckillPayConfirmVisible.value = false;
         clearCheckoutForm();
       }
     }
@@ -371,6 +376,7 @@ export function useMallApp() {
       normalOrders.value = normal;
       seckillOrders.value = seckill;
       syncPendingCheckoutOrder(normal);
+      syncPendingSeckillPayOrder(seckill);
     } catch (error) {
       ElMessage.error(error.message);
     } finally {
@@ -491,7 +497,7 @@ export function useMallApp() {
     const state = ensureSeckillState(product.id);
     state.pending = true;
     state.status = "submitting";
-    state.message = "请求已提交，正在进入抢购队列";
+    state.message = "璇锋眰宸叉彁浜わ紝姝ｅ湪杩涘叆鎶㈣喘闃熷垪";
 
     try {
       const result = await createSeckill(product.id);
@@ -543,11 +549,14 @@ export function useMallApp() {
 
         if (result.status === 1) {
           state.status = "success";
-          state.message = `${result.message}，订单号 ${result.orderId}`;
+          const displayOrderNo = result.orderNo || result.orderId;
+          state.message = `${result.message}，订单号 ${displayOrderNo}`;
           ElMessage.success(state.message);
           await Promise.all([loadOrders(), loadSeckillProducts()]);
           if (result.orderId) {
-            await openOrder(result.orderId, "seckill");
+            // 秒杀成功后直接进入待支付确认层，让秒杀与普通订单保持同样的支付节奏。
+            const order = await fetchSeckillOrderDetail(result.orderId);
+            openSeckillPayConfirm(order);
           }
           return;
         }
@@ -568,7 +577,6 @@ export function useMallApp() {
 
     pollingTimers.set(productId, timer);
   }
-
   function stopPolling(productId) {
     const timer = pollingTimers.get(productId);
     if (timer) {
@@ -700,7 +708,7 @@ export function useMallApp() {
     try {
       await deleteCartItem(target.cartItemId);
       cartItems.value = cartItems.value.filter((item) => item.cartKey !== cartKey);
-      ElMessage.success("已移出购物车");
+      ElMessage.success("宸茬Щ鍑鸿喘鐗╄溅");
     } catch (error) {
       ElMessage.error(error.message);
     }
@@ -825,6 +833,10 @@ export function useMallApp() {
       if (pendingCheckoutOrder.value?.id === normalized.id && normalized.orderType === "normal") {
         pendingCheckoutOrder.value = null;
       }
+      if (pendingSeckillPayOrder.value?.id === normalized.id && normalized.orderType === "seckill") {
+        pendingSeckillPayOrder.value = null;
+        seckillPayConfirmVisible.value = false;
+      }
       return paidOrder;
     } catch (error) {
       ElMessage.error(error.message);
@@ -844,21 +856,68 @@ export function useMallApp() {
     return heldOrder;
   }
 
-  async function cancelOrder(order) {
-    const normalized = normalizeOrder(order, order.orderType);
-    if (normalized.orderType !== "normal") {
-      ElMessage.warning("当前仅支持取消普通订单");
+  function openSeckillPayConfirm(order) {
+    const normalized = normalizeOrder(order, order.orderType || "seckill");
+    if (normalized.orderType !== "seckill") {
+      return;
+    }
+    if (!isOrderPayable(normalized)) {
+      ElMessage.warning("当前秒杀订单状态不允许继续支付");
+      return;
+    }
+    pendingSeckillPayOrder.value = normalized;
+    seckillPayConfirmVisible.value = true;
+  }
+
+  function closeSeckillPayConfirm() {
+    seckillPayConfirmVisible.value = false;
+  }
+
+  function holdPendingSeckillPayOrder() {
+    if (!pendingSeckillPayOrder.value || pendingSeckillPayOrder.value.status !== 0) {
+      pendingSeckillPayOrder.value = null;
+      seckillPayConfirmVisible.value = false;
       return null;
     }
+
+    const heldOrder = pendingSeckillPayOrder.value;
+    seckillPayConfirmVisible.value = false;
+    // 稍后支付只关闭确认层，不会取消订单，方便用户去订单中心继续处理。
+    ElMessage.info("秒杀订单已保留为待支付，可在我的订单继续支付");
+    return heldOrder;
+  }
+
+  async function confirmSeckillPay() {
+    if (!pendingSeckillPayOrder.value) {
+      return null;
+    }
+    // 优先消费已经创建好的秒杀待支付订单，避免重复支付或重复建单。
+    const paidOrder = await payOrder(pendingSeckillPayOrder.value);
+    if (!paidOrder) {
+      return null;
+    }
+    pendingSeckillPayOrder.value = null;
+    seckillPayConfirmVisible.value = false;
+    return normalizeOrder(paidOrder, "seckill");
+  }
+
+  async function cancelOrder(order) {
+    const normalized = normalizeOrder(order, order.orderType);
     if (!isOrderPayable(normalized)) {
       ElMessage.warning("当前订单状态不允许取消");
       return null;
     }
 
+    const isNormalOrder = normalized.orderType === "normal";
+    const orderTypeLabel = isNormalOrder ? "普通订单" : "秒杀订单";
+    const confirmMessage = isNormalOrder
+      ? "取消后订单会变成已取消，系统会自动回补商品库存，是否继续？"
+      : "取消后秒杀订单会变成已取消，系统会自动回补秒杀库存，是否继续？";
+
     try {
       await ElMessageBox.confirm(
-        "取消后订单会变成已取消，系统会自动回补商品库存，是否继续？",
-        "取消订单",
+        confirmMessage,
+        `取消${orderTypeLabel}`,
         {
           type: "warning",
           confirmButtonText: "确认取消",
@@ -870,8 +929,16 @@ export function useMallApp() {
     }
 
     try {
-      const cancelledOrder = await cancelNormalOrder(normalized.id);
-      await Promise.all([loadProducts(), loadOrders(), loadCartItems()]);
+      const cancelledOrder =
+        normalized.orderType === "normal"
+          ? await cancelNormalOrder(normalized.id)
+          : await cancelSeckillOrder(normalized.id);
+      await Promise.all([
+        loadProducts(),
+        loadSeckillProducts(),
+        loadOrders(),
+        loadCartItems()
+      ]);
 
       if (selectedOrder.value?.id === normalized.id && selectedOrder.value?.orderType === normalized.orderType) {
         selectedOrder.value = normalizeOrder(cancelledOrder, normalized.orderType);
@@ -879,9 +946,13 @@ export function useMallApp() {
       if (pendingCheckoutOrder.value?.id === normalized.id) {
         pendingCheckoutOrder.value = null;
       }
+      if (pendingSeckillPayOrder.value?.id === normalized.id) {
+        pendingSeckillPayOrder.value = null;
+        seckillPayConfirmVisible.value = false;
+      }
 
-      ElMessage.success("订单已取消");
-      return normalizeOrder(cancelledOrder, "normal");
+      ElMessage.success(`${orderTypeLabel}已取消`);
+      return normalizeOrder(cancelledOrder, normalized.orderType);
     } catch (error) {
       ElMessage.error(error.message);
       return null;
@@ -995,6 +1066,25 @@ export function useMallApp() {
     }
   }
 
+  function syncPendingSeckillPayOrder(seckillOrderList = []) {
+    if (!pendingSeckillPayOrder.value) {
+      return;
+    }
+
+    const latestOrder = seckillOrderList.find((order) => order.id === pendingSeckillPayOrder.value.id);
+    if (!latestOrder) {
+      pendingSeckillPayOrder.value = null;
+      seckillPayConfirmVisible.value = false;
+      return;
+    }
+
+    pendingSeckillPayOrder.value = normalizeOrder(latestOrder, "seckill");
+    if (pendingSeckillPayOrder.value.status !== 0) {
+      pendingSeckillPayOrder.value = null;
+      seckillPayConfirmVisible.value = false;
+    }
+  }
+
   function clearCheckoutForm() {
     checkoutForm.remark = "";
   }
@@ -1051,6 +1141,8 @@ export function useMallApp() {
     orderStats,
     checkoutForm,
     pendingCheckoutOrder,
+    pendingSeckillPayOrder,
+    seckillPayConfirmVisible,
     selectedAddress,
     selectedAddressId,
     profileDisplayName,
@@ -1082,6 +1174,10 @@ export function useMallApp() {
     createPendingCheckoutOrder,
     submitCheckoutAndPay,
     holdPendingCheckoutOrder,
+    openSeckillPayConfirm,
+    closeSeckillPayConfirm,
+    holdPendingSeckillPayOrder,
+    confirmSeckillPay,
     payOrder,
     cancelOrder,
     fetchAndToastPayStatus,
@@ -1181,5 +1277,5 @@ function inferOrderType(order) {
 }
 
 function getCategoryName(categoryId) {
-  return CATEGORY_NAME_MAP[categoryId] || `分类 ${categoryId}`;
+  return CATEGORY_NAME_MAP[categoryId] || `鍒嗙被 ${categoryId}`;
 }

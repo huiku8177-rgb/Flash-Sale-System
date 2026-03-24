@@ -30,6 +30,14 @@ const selectedOrderAmount = computed(() => {
 function backToProfile() {
   router.push({ name: "app-profile" });
 }
+
+function handlePay(order) {
+  if (order.orderType === "seckill") {
+    mallApp.openSeckillPayConfirm(order);
+    return;
+  }
+  mallApp.payOrder(order);
+}
 </script>
 
 <template>
@@ -109,12 +117,12 @@ function backToProfile() {
               v-if="mallApp.isOrderPayable(order)"
               text
               type="danger"
-              @click="mallApp.payOrder(order)"
+              @click="handlePay(order)"
             >
               去支付
             </el-button>
             <el-button
-              v-if="order.orderType === 'normal' && mallApp.isOrderPayable(order)"
+              v-if="mallApp.isOrderPayable(order)"
               text
               @click="mallApp.cancelOrder(order)"
             >
@@ -198,6 +206,9 @@ function backToProfile() {
               <h3>秒杀订单信息</h3>
               <p>商品 ID：{{ mallApp.selectedOrder.productId }}</p>
               <p>秒杀价格：{{ formatCurrency(mallApp.selectedOrder.seckillPrice) }}</p>
+              <p v-if="mallApp.getOrderStatusNote(mallApp.selectedOrder)">
+                状态说明：{{ mallApp.getOrderStatusNote(mallApp.selectedOrder) }}
+              </p>
             </div>
 
             <div class="dialog-actions">
@@ -209,7 +220,7 @@ function backToProfile() {
                   查询支付状态
                 </el-button>
                 <el-button
-                  v-if="mallApp.isOrderPayable(mallApp.selectedOrder) && mallApp.selectedOrder.orderType === 'normal'"
+                  v-if="mallApp.isOrderPayable(mallApp.selectedOrder)"
                   @click="mallApp.cancelOrder(mallApp.selectedOrder)"
                 >
                   取消订单
@@ -217,7 +228,7 @@ function backToProfile() {
                 <el-button
                   v-if="mallApp.isOrderPayable(mallApp.selectedOrder)"
                   type="danger"
-                  @click="mallApp.payOrder(mallApp.selectedOrder)"
+                  @click="handlePay(mallApp.selectedOrder)"
                 >
                   去支付
                 </el-button>

@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   color-scheme: light;
   --bg: #f5f6f7;
   --paper: #ffffff;
@@ -330,9 +330,13 @@ code {
 
 .portal-frame {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   padding: 20px 0 32px;
+}
+
+.portal-frame--home {
+  grid-template-columns: minmax(0, 1fr) 320px;
 }
 
 .portal-main {
@@ -404,10 +408,10 @@ code {
 }
 
 .sidebar-order-item {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
 }
 
 .sidebar-order-item strong,
@@ -415,6 +419,21 @@ code {
   display: block;
 }
 
+.sidebar-order-info {
+  min-width: 0;
+}
+
+.sidebar-order-info strong {
+  font-size: 15px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.sidebar-order-info small {
+  display: block;
+  margin-top: 6px;
+  white-space: nowrap;
+}
 .sidebar-order-item small,
 .sidebar-cart-item small,
 .profile-order-row span,
@@ -427,13 +446,27 @@ code {
 
 .sidebar-order-meta {
   display: grid;
+  min-width: 68px;
   justify-items: end;
+  align-content: start;
   gap: 6px;
+  text-align: right;
 }
 
-.page-stack {
-  display: grid;
-  gap: 18px;
+.sidebar-order-meta span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.sidebar-order-meta button {
+  padding: 0;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .home-hero-layout {

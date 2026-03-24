@@ -36,16 +36,22 @@ CREATE TABLE IF NOT EXISTS product (
 
 CREATE TABLE IF NOT EXISTS seckill_order (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'order id',
+    order_no VARCHAR(32) NOT NULL COMMENT 'order number',
     user_id BIGINT NOT NULL COMMENT 'user id',
     product_id BIGINT NOT NULL COMMENT 'seckill product id',
     seckill_price DECIMAL(10, 2) NOT NULL COMMENT 'seckill price at order time',
     status TINYINT NOT NULL DEFAULT 0 COMMENT '0-created,1-paid,2-cancelled',
+    pay_time DATETIME NULL COMMENT 'pay time',
+    cancel_reason VARCHAR(64) NULL COMMENT 'cancel reason',
+    cancel_time DATETIME NULL COMMENT 'cancel time',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'update time',
     UNIQUE KEY uk_order_user_product (user_id, product_id),
+    UNIQUE KEY uk_seckill_order_order_no (order_no),
     KEY idx_order_user_id (user_id),
     KEY idx_order_product_id (product_id),
-    KEY idx_order_create_time (create_time)
+    KEY idx_order_create_time (create_time),
+    KEY idx_order_status_create_time (status, create_time)
 ) COMMENT='seckill order table';
 
 INSERT INTO seckill_product (name, price, seckill_price, stock, status, start_time, end_time)
