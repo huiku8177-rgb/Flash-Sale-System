@@ -34,8 +34,10 @@ function createClient(baseURL) {
     (error) => {
       if (error.response?.status === 401) {
         clearSession();
-        if (window.location.hash !== "#/login") {
-          window.location.hash = "#/login";
+        if (!window.location.hash.startsWith("#/login")) {
+          const currentPath = normalizeHashPath(window.location.hash);
+          const redirect = encodeURIComponent(currentPath || "/app/home");
+          window.location.hash = `#/login?redirect=${redirect}`;
         }
       }
 
@@ -51,6 +53,15 @@ function createClient(baseURL) {
   );
 
   return client;
+}
+
+function normalizeHashPath(hash) {
+  const normalized = (hash || "").replace(/^#/, "");
+  if (!normalized || normalized.startsWith("/login")) {
+    return "";
+  }
+
+  return normalized;
 }
 
 export const gatewayClient = createClient(gatewayBaseUrl);

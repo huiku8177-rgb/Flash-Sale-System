@@ -1,6 +1,5 @@
 ﻿import { computed, reactive, ref, watch } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
-import { fetchUserAddresses } from "../api/address";
+import { ElMessage } from "element-plus";
 import { fetchCurrentUser, updatePassword } from "../api/auth";
 import {
   addCartItem,
@@ -8,9 +7,10 @@ import {
   fetchCartItems,
   updateCartItem
 } from "../api/cart";
+import { fetchUserAddresses } from "../api/address";
 import {
-  cancelSeckillOrder,
   cancelNormalOrder,
+  cancelSeckillOrder,
   checkoutNormalOrder,
   fetchNormalOrderDetail,
   fetchNormalOrders,
@@ -28,7 +28,13 @@ import {
   fetchSeckillProducts
 } from "../api/seckillProduct";
 import { authState } from "../stores/auth";
-import { formatDateTime, getOrderStatusText, getProductPhase } from "../utils/format";
+import {
+  formatDateTime,
+  getOrderStatusText,
+  getProductPhase
+} from "../utils/format";
+
+const CART_STORAGE_KEY = "flash-sale-cart-draft";
 
 const CATEGORY_NAME_MAP = {
   1: "休闲零食",
@@ -44,12 +50,9 @@ export function useMallApp() {
   const seckillProducts = ref([]);
   const normalOrders = ref([]);
   const seckillOrders = ref([]);
-  const cartItems = ref([]);
+  const productCategoryStats = ref(buildCategoryStats());
   const addresses = ref([]);
   const profile = ref(null);
-  const pendingCheckoutOrder = ref(null);
-  const pendingSeckillPayOrder = ref(null);
-  const seckillPayConfirmVisible = ref(false);
 
   const productsLoading = ref(false);
   const seckillProductsLoading = ref(false);
@@ -62,12 +65,16 @@ export function useMallApp() {
 
   const productDetailVisible = ref(false);
   const orderDialogVisible = ref(false);
+  const seckillPayConfirmVisible = ref(false);
   const productDetail = ref(null);
   const productDetailType = ref("normal");
   const selectedOrder = ref(null);
   const selectedOrderType = ref("seckill");
-
+  const pendingCheckoutOrder = ref(null);
+  const pendingSeckillPayOrder = ref(null);
+  const selectedAddressId = ref(null);
   const currentTime = ref(Date.now());
+
   const productFilters = reactive({
     name: "",
     status: "",
@@ -76,47 +83,18 @@ export function useMallApp() {
   const checkoutForm = reactive({
     remark: ""
   });
-  const selectedAddressId = ref(null);
   const seckillState = reactive({});
+  const cartItems = ref(readCart());
 
   const pollingTimers = new Map();
   let ticker = null;
   let initialized = false;
 
-  watch(
-    () => authState.token,
-    (token) => {
-      if (!token) {
-        profile.value = null;
-        cartItems.value = [];
-        addresses.value = [];
-        normalOrders.value = [];
-        seckillOrders.value = [];
-        selectedAddressId.value = null;
-        pendingCheckoutOrder.value = null;
-        pendingSeckillPayOrder.value = null;
-        seckillPayConfirmVisible.value = false;
-        clearCheckoutForm();
-      }
-    }
+  const productCategories = computed(() => productCategoryStats.value);
+
+  const productTotalCount = computed(() =>
+    productCategoryStats.value.reduce((total, entry) => total + entry.count, 0)
   );
-
-  const productCategories = computed(() => {
-    const groups = new Map();
-    for (const product of products.value) {
-      const categoryId = product.categoryId ?? 0;
-      if (!groups.has(categoryId)) {
-        groups.set(categoryId, {
-          id: categoryId,
-          label: getCategoryName(categoryId),
-          count: 0
-        });
-      }
-      groups.get(categoryId).count += 1;
-    }
-
-    return [...groups.values()].sort((left, right) => left.id - right.id);
-  });
 
   const flashProducts = computed(() => {
     const phaseWeight = {
@@ -146,69 +124,44 @@ export function useMallApp() {
       });
   });
 
-  const homeShelves = computed(() => {
-    return {
-      hero: featuredNormalProducts.value.slice(0, 3),
-      picks: featuredNormalProducts.value.slice(0, 4),
-      fresh: featuredNormalProducts.value.slice(4, 8)
-    };
-  });
+  const homeShelves = computed(() => ({
+    hero: featuredNormalProducts.value.slice(0, 3),
+    picks: featuredNormalProducts.value.slice(0, 4),
+    fresh: featuredNormalProducts.value.slice(4, 8)
+  }));
 
-  const normalCartItems = computed(() =>
-    cartItems.value.filter((item) => item.productType === "normal")
-  );
-
-  const selectableNormalCartItems = computed(() =>
-    normalCartItems.value.filter((item) => item.canCheckout)
-  );
+  const normalCartItems = computed(() => cartItems.value.filter((item) => item.productType === "normal"));
+  const seckillCartItems = computed(() => cartItems.value.filter((item) => item.productType === "seckill"));
 
   const selectedNormalCartItems = computed(() =>
-    selectableNormalCartItems.value.filter((item) => item.selected)
+    normalCartItems.value.filter((item) => item.selected && item.canCheckout)
   );
 
-  const seckillCartItems = computed(() =>
-    cartItems.value.filter((item) => item.productType === "seckill")
-  );
+  const normalCartAllSelected = computed(() => {
+    const selectableItems = normalCartItems.value.filter((item) => item.canCheckout);
+    return Boolean(selectableItems.length) && selectableItems.every((item) => item.selected);
+  });
 
   const cartSummary = computed(() => {
     return cartItems.value.reduce(
       (summary, item) => {
-        summary.count += item.quantity;
-        summary.total += Number(getCartItemPrice(item) ?? 0) * item.quantity;
+        summary.count += Number(item.quantity || 0);
+        summary.total += Number(getCartItemPrice(item) || 0) * Number(item.quantity || 0);
         return summary;
       },
-      {
-        count: 0,
-        total: 0
-      }
+      { count: 0, total: 0 }
     );
   });
 
   const checkoutSummary = computed(() => {
     return selectedNormalCartItems.value.reduce(
       (summary, item) => {
-        summary.count += item.quantity;
-        summary.total += Number(getCartItemPrice(item) ?? 0) * item.quantity;
+        summary.count += Number(item.quantity || 0);
+        summary.total += Number(getCartItemPrice(item) || 0) * Number(item.quantity || 0);
         return summary;
       },
-      {
-        count: 0,
-        total: 0
-      }
+      { count: 0, total: 0 }
     );
-  });
-
-  const normalCartAllSelected = computed(() => {
-    return selectableNormalCartItems.value.length > 0 &&
-      selectableNormalCartItems.value.every((item) => item.selected);
-  });
-
-  const selectedAddress = computed(() => {
-    return addresses.value.find((item) => item.id === selectedAddressId.value) || null;
-  });
-
-  const checkoutFormComplete = computed(() => {
-    return Boolean(selectedAddressId.value);
   });
 
   const orders = computed(() => {
@@ -235,17 +188,19 @@ export function useMallApp() {
     };
 
     orders.value.forEach((order) => {
-      if (order.status === 0) {
-        stats.created += 1;
-      } else if (order.status === 1) {
-        stats.paid += 1;
-      } else if (order.status === 2) {
-        stats.cancelled += 1;
-      }
+      if (order.status === 0) stats.created += 1;
+      else if (order.status === 1) stats.paid += 1;
+      else if (order.status === 2) stats.cancelled += 1;
     });
 
     return stats;
   });
+
+  const selectedAddress = computed(() =>
+    addresses.value.find((address) => address.id === selectedAddressId.value) || null
+  );
+
+  const checkoutFormComplete = computed(() => Boolean(selectedAddress.value));
 
   const profileDisplayName = computed(() => {
     return profile.value?.username || authState.username || "未登录用户";
@@ -258,17 +213,19 @@ export function useMallApp() {
       }, 1000);
     }
 
-    if (!initialized) {
-      initialized = true;
-      await Promise.all([
-        loadProfile(),
-        loadProducts(),
-        loadSeckillProducts(),
-        loadOrders(),
-        loadCartItems(),
-        loadAddresses()
-      ]);
+    if (initialized) {
+      return;
     }
+
+    initialized = true;
+    await Promise.all([
+      loadProducts(),
+      loadSeckillProducts(),
+      loadProfile(),
+      loadOrders(),
+      loadCartItems(),
+      loadAddresses()
+    ]);
   }
 
   function dispose() {
@@ -279,6 +236,21 @@ export function useMallApp() {
 
     pollingTimers.forEach((timer) => window.clearInterval(timer));
     pollingTimers.clear();
+  }
+
+  function resetUserState() {
+    profile.value = null;
+    normalOrders.value = [];
+    seckillOrders.value = [];
+    addresses.value = [];
+    selectedAddressId.value = null;
+    pendingCheckoutOrder.value = null;
+    pendingSeckillPayOrder.value = null;
+    selectedOrder.value = null;
+    orderDialogVisible.value = false;
+    seckillPayConfirmVisible.value = false;
+    checkoutForm.remark = "";
+    cartItems.value = readCart();
   }
 
   async function loadProfile() {
@@ -298,50 +270,22 @@ export function useMallApp() {
     }
   }
 
-  async function loadAddresses() {
-    if (!authState.token) {
-      addresses.value = [];
-      selectedAddressId.value = null;
-      clearCheckoutForm();
-      return;
-    }
-
-    addressesLoading.value = true;
-    try {
-      const list = await fetchUserAddresses();
-      addresses.value = list.map(normalizeAddress);
-
-      if (!addresses.value.length) {
-        selectedAddressId.value = null;
-        clearCheckoutForm();
-        return;
-      }
-
-      const matchedAddress = addresses.value.find((item) => item.id === selectedAddressId.value);
-      const fallbackAddress =
-        matchedAddress ||
-        addresses.value.find((item) => item.isDefault) ||
-        addresses.value[0];
-
-      selectedAddressId.value = fallbackAddress?.id ?? null;
-    } catch (error) {
-      addresses.value = [];
-      selectedAddressId.value = null;
-      clearCheckoutForm();
-      ElMessage.error(error.message);
-    } finally {
-      addressesLoading.value = false;
-    }
-  }
-
   async function loadProducts() {
     productsLoading.value = true;
     try {
-      products.value = await fetchProducts({
+      const list = await fetchProducts({
         name: productFilters.name || undefined,
         status: productFilters.status === "" ? undefined : Number(productFilters.status),
         categoryId: productFilters.categoryId || undefined
       });
+      products.value = list.map((product) => ({
+        ...product,
+        categoryName: getCategoryName(product.categoryId)
+      }));
+      if (!productFilters.name && productFilters.status === "" && productFilters.categoryId === null) {
+        productCategoryStats.value = buildCategoryStats(products.value);
+      }
+      syncCartSnapshots();
     } catch (error) {
       ElMessage.error(error.message);
     } finally {
@@ -353,6 +297,7 @@ export function useMallApp() {
     seckillProductsLoading.value = true;
     try {
       seckillProducts.value = await fetchSeckillProducts();
+      syncCartSnapshots();
     } catch (error) {
       ElMessage.error(error.message);
     } finally {
@@ -369,14 +314,9 @@ export function useMallApp() {
 
     ordersLoading.value = true;
     try {
-      const [normal, seckill] = await Promise.all([
-        fetchNormalOrders(),
-        fetchSeckillOrders()
-      ]);
+      const [normal, seckill] = await Promise.all([fetchNormalOrders(), fetchSeckillOrders()]);
       normalOrders.value = normal;
       seckillOrders.value = seckill;
-      syncPendingCheckoutOrder(normal);
-      syncPendingSeckillPayOrder(seckill);
     } catch (error) {
       ElMessage.error(error.message);
     } finally {
@@ -385,25 +325,53 @@ export function useMallApp() {
   }
 
   async function loadCartItems() {
+    const draftItems = readCart();
+
     if (!authState.token) {
-      cartItems.value = [];
+      cartItems.value = draftItems;
       return;
     }
 
     try {
       const items = await fetchCartItems();
-      cartItems.value = items.map(normalizeCartItem);
+      cartItems.value = [...items.map((item) => normalizeCartItem(item)), ...draftItems];
     } catch (error) {
-      cartItems.value = [];
+      cartItems.value = draftItems;
       ElMessage.error(error.message);
+    }
+  }
+
+  async function loadAddresses() {
+    if (!authState.token) {
+      addresses.value = [];
+      selectedAddressId.value = null;
+      return;
+    }
+
+    addressesLoading.value = true;
+    try {
+      const list = await fetchUserAddresses();
+      addresses.value = list;
+      const activeAddress =
+        list.find((address) => address.id === selectedAddressId.value) ||
+        list.find((address) => address.isDefault) ||
+        list[0] ||
+        null;
+      selectedAddressId.value = activeAddress?.id ?? null;
+    } catch (error) {
+      addresses.value = [];
+      selectedAddressId.value = null;
+      ElMessage.error(error.message);
+    } finally {
+      addressesLoading.value = false;
     }
   }
 
   async function refreshMallData() {
     await Promise.all([
-      loadProfile(),
       loadProducts(),
       loadSeckillProducts(),
+      loadProfile(),
       loadOrders(),
       loadCartItems(),
       loadAddresses()
@@ -494,10 +462,16 @@ export function useMallApp() {
   }
 
   async function handleSeckill(product) {
+    if (!authState.token) {
+      ElMessage.warning("请先登录后再参与秒杀");
+      window.location.hash = "#/login";
+      return;
+    }
+
     const state = ensureSeckillState(product.id);
     state.pending = true;
     state.status = "submitting";
-    state.message = "璇锋眰宸叉彁浜わ紝姝ｅ湪杩涘叆鎶㈣喘闃熷垪";
+    state.message = "请求已提交，正在进入抢购队列";
 
     try {
       const result = await createSeckill(product.id);
@@ -537,7 +511,7 @@ export function useMallApp() {
           if (Date.now() - startedAt > 15000) {
             state.pending = false;
             state.status = "timeout";
-            state.message = "查询超时，请稍后在订单里确认结果";
+            state.message = "查询超时，请稍后在订单中心确认结果";
             stopPolling(productId);
             ElMessage.warning(state.message);
           }
@@ -549,21 +523,19 @@ export function useMallApp() {
 
         if (result.status === 1) {
           state.status = "success";
-          const displayOrderNo = result.orderNo || result.orderId;
-          state.message = `${result.message}，订单号 ${displayOrderNo}`;
-          ElMessage.success(state.message);
+          state.message = result.message;
+          ElMessage.success(result.message);
           await Promise.all([loadOrders(), loadSeckillProducts()]);
-          if (result.orderId) {
-            // 秒杀成功后直接进入待支付确认层，让秒杀与普通订单保持同样的支付节奏。
-            const order = await fetchSeckillOrderDetail(result.orderId);
-            openSeckillPayConfirm(order);
+          const existingOrder = seckillOrders.value.find((order) => order.id === result.orderId);
+          if (existingOrder?.status === 0) {
+            openSeckillPayConfirm(existingOrder);
           }
           return;
         }
 
         state.status = "failed";
         state.message = result.message;
-        ElMessage.error(result.message);
+        ElMessage.warning(result.message);
         await loadSeckillProducts();
       } catch (error) {
         stopPolling(productId);
@@ -577,6 +549,7 @@ export function useMallApp() {
 
     pollingTimers.set(productId, timer);
   }
+
   function stopPolling(productId) {
     const timer = pollingTimers.get(productId);
     if (timer) {
@@ -586,64 +559,35 @@ export function useMallApp() {
   }
 
   async function addToCart(product, type = inferProductType(product)) {
-    if (type !== "normal") {
-      ElMessage.warning("秒杀商品不支持加入购物车，请前往秒杀会场直接抢购");
+    if (type === "seckill") {
+      const draft = createLocalCartItem(product, type);
+      const existing = seckillCartItems.value.find((item) => item.cartKey === draft.cartKey);
+      if (existing) {
+        existing.quantity += 1;
+      } else {
+        cartItems.value.unshift(draft);
+      }
+      persistCart();
+      ElMessage.success("已加入秒杀草稿");
+      return;
+    }
+
+    if (!authState.token) {
+      ElMessage.warning("请先登录后再加入购物车");
+      window.location.hash = "#/login";
       return;
     }
 
     try {
-      const cartItem = await addCartItem({
+      await addCartItem({
         productId: product.id,
         quantity: 1,
         selected: true
       });
-      upsertCartItem(cartItem);
-      ElMessage.success("已加入普通商品购物车");
+      await loadCartItems();
+      ElMessage.success("已加入购物车");
     } catch (error) {
       ElMessage.error(error.message);
-    }
-  }
-
-  async function prepareImmediateCheckout(product) {
-    if (inferProductType(product) !== "normal") {
-      ElMessage.warning("秒杀商品暂不支持立即购买，请前往秒杀会场参与抢购");
-      return false;
-    }
-
-    try {
-      const existingItem = normalCartItems.value.find((item) => item.productId === product.id);
-      const targetItem = existingItem
-        ? await updateCartItem(existingItem.cartItemId, {
-            quantity: existingItem.quantity,
-            selected: true
-          })
-        : await addCartItem({
-            productId: product.id,
-            quantity: 1,
-            selected: true
-          });
-
-      upsertCartItem(targetItem);
-
-      const otherSelectedItems = selectableNormalCartItems.value.filter(
-        (item) => item.cartItemId !== targetItem.id && item.selected
-      );
-
-      if (otherSelectedItems.length) {
-        const updatedItems = await Promise.all(
-          otherSelectedItems.map((item) =>
-            updateCartItem(item.cartItemId, {
-              selected: false
-            })
-          )
-        );
-        updatedItems.forEach((item) => upsertCartItem(item));
-      }
-
-      return true;
-    } catch (error) {
-      ElMessage.error(error.message);
-      return false;
     }
   }
 
@@ -653,47 +597,60 @@ export function useMallApp() {
       return;
     }
 
+    if (target.productType === "seckill") {
+      target.quantity = Math.max(1, Number(target.quantity || 1) + delta);
+      persistCart();
+      return;
+    }
+
     try {
-      const updatedItem = await updateCartItem(target.cartItemId, {
-        quantity: Math.max(1, target.quantity + delta)
+      await updateCartItem(target.cartItemId, {
+        quantity: Math.max(1, Number(target.quantity || 1) + delta),
+        selected: target.selected
       });
-      upsertCartItem(updatedItem);
+      await loadCartItems();
     } catch (error) {
       ElMessage.error(error.message);
     }
   }
 
   async function updateCartSelected(cartKey, selected) {
-    const target = cartItems.value.find((item) => item.cartKey === cartKey);
+    const target = normalCartItems.value.find((item) => item.cartKey === cartKey);
     if (!target) {
       return;
     }
 
     try {
-      const updatedItem = await updateCartItem(target.cartItemId, {
-        selected
+      await updateCartItem(target.cartItemId, {
+        quantity: target.quantity,
+        selected: Boolean(selected)
       });
-      upsertCartItem(updatedItem);
+      await loadCartItems();
     } catch (error) {
       ElMessage.error(error.message);
     }
   }
 
   async function toggleAllNormalCart(selected) {
-    const targets = selectableNormalCartItems.value.filter((item) => item.selected !== selected);
-    if (!targets.length) {
+    const nextValue = Boolean(selected);
+    const changedItems = normalCartItems.value.filter(
+      (item) => item.canCheckout && item.selected !== nextValue
+    );
+
+    if (!changedItems.length) {
       return;
     }
 
     try {
-      const updatedItems = await Promise.all(
-        targets.map((item) =>
+      await Promise.all(
+        changedItems.map((item) =>
           updateCartItem(item.cartItemId, {
-            selected
+            quantity: item.quantity,
+            selected: nextValue
           })
         )
       );
-      updatedItems.forEach((item) => upsertCartItem(item));
+      await loadCartItems();
     } catch (error) {
       ElMessage.error(error.message);
     }
@@ -705,77 +662,114 @@ export function useMallApp() {
       return;
     }
 
+    if (target.productType === "seckill") {
+      cartItems.value = cartItems.value.filter((item) => item.cartKey !== cartKey);
+      persistCart();
+      ElMessage.success("已移出购物车草稿");
+      return;
+    }
+
     try {
       await deleteCartItem(target.cartItemId);
-      cartItems.value = cartItems.value.filter((item) => item.cartKey !== cartKey);
-      ElMessage.success("宸茬Щ鍑鸿喘鐗╄溅");
+      await loadCartItems();
+      ElMessage.success("已移出购物车");
     } catch (error) {
       ElMessage.error(error.message);
     }
   }
 
   function isInCart(productId, type = "normal") {
-    if (type !== "normal") {
-      return false;
-    }
-    return cartItems.value.some((item) => item.productId === productId);
+    return cartItems.value.some(
+      (item) => item.productType === type && Number(item.productId || item.id) === Number(productId)
+    );
   }
 
   function getCartItemPrice(item) {
-    return item.displayPrice ?? item.price ?? 0;
+    return Number(item.displayPrice ?? item.seckillPrice ?? item.price ?? 0);
   }
 
-  async function checkoutNormalCart() {
-    if (!selectedNormalCartItems.value.length) {
-      ElMessage.warning("购物车里还没有可结算的普通商品");
-      return;
-    }
-    if (!selectedAddressId.value) {
-      ElMessage.warning("请选择收货地址后再提交订单");
-      return;
+  async function prepareImmediateCheckout(product) {
+    if (!authState.token) {
+      ElMessage.warning("请先登录后再立即购买");
+      window.location.hash = "#/login";
+      return false;
     }
 
-    checkoutLoading.value = true;
-    try {
-      const order = await checkoutNormalOrder({
-        remark: checkoutForm.remark || undefined,
-        addressId: selectedAddressId.value
+    if (inferProductType(product) !== "normal") {
+      ElMessage.warning("秒杀商品请直接在秒杀会场参与抢购");
+      return false;
+    }
+
+    await Promise.all([loadAddresses(), loadCartItems()]);
+
+    let target = normalCartItems.value.find((item) => Number(item.productId) === Number(product.id));
+    if (!target) {
+      await addCartItem({
+        productId: product.id,
+        quantity: 1,
+        selected: true
       });
-
-      clearCheckoutForm();
-      ElMessage.success(`普通订单创建成功，订单号 ${order.orderNo}`);
-      await Promise.all([loadProducts(), loadOrders(), loadCartItems()]);
-      await openOrder(order, "normal");
-    } catch (error) {
-      ElMessage.error(error.message);
-    } finally {
-      checkoutLoading.value = false;
+      await loadCartItems();
+      target = normalCartItems.value.find((item) => Number(item.productId) === Number(product.id));
     }
+
+    if (!target) {
+      ElMessage.error("立即购买准备失败，请稍后重试");
+      return false;
+    }
+
+    const changedItems = normalCartItems.value.filter((item) => {
+      if (!item.canCheckout) {
+        return false;
+      }
+      const shouldSelect = Number(item.productId) === Number(product.id);
+      return item.selected !== shouldSelect;
+    });
+
+    if (changedItems.length) {
+      await Promise.all(
+        changedItems.map((item) =>
+          updateCartItem(item.cartItemId, {
+            quantity: item.quantity,
+            selected: Number(item.productId) === Number(product.id)
+          })
+        )
+      );
+      await loadCartItems();
+    }
+
+    pendingCheckoutOrder.value = null;
+    checkoutForm.remark = "";
+    return true;
   }
 
   async function createPendingCheckoutOrder() {
+    if (pendingCheckoutOrder.value) {
+      return pendingCheckoutOrder.value;
+    }
+
     if (!selectedNormalCartItems.value.length) {
       ElMessage.warning("请先勾选需要结算的商品");
       return null;
     }
+
     if (!selectedAddressId.value) {
       ElMessage.warning("请选择收货地址后再支付");
       return null;
-    }
-    if (pendingCheckoutOrder.value && pendingCheckoutOrder.value.status === 0) {
-      return pendingCheckoutOrder.value;
     }
 
     checkoutLoading.value = true;
     try {
       const order = await checkoutNormalOrder({
-        remark: checkoutForm.remark || undefined,
-        addressId: selectedAddressId.value
+        addressId: selectedAddressId.value,
+        remark: checkoutForm.remark || undefined
       });
+      const normalized = normalizeOrder(order, "normal");
+      pendingCheckoutOrder.value = normalized;
+      checkoutForm.remark = "";
       await Promise.all([loadProducts(), loadOrders(), loadCartItems()]);
-      pendingCheckoutOrder.value = normalizeOrder(order, "normal");
-      ElMessage.success(`普通订单已创建，订单号 ${order.orderNo}`);
-      return pendingCheckoutOrder.value;
+      ElMessage.success(`普通订单已创建，订单号 ${normalized.orderNo}`);
+      return normalized;
     } catch (error) {
       ElMessage.error(error.message);
       return null;
@@ -784,34 +778,42 @@ export function useMallApp() {
     }
   }
 
+  function holdPendingCheckoutOrder() {
+    const order = pendingCheckoutOrder.value;
+    pendingCheckoutOrder.value = null;
+    return order;
+  }
+
   async function submitCheckoutAndPay() {
-    if (!selectedNormalCartItems.value.length) {
-      ElMessage.warning("请先勾选需要结算的商品");
+    const order = pendingCheckoutOrder.value || (await createPendingCheckoutOrder());
+    if (!order) {
       return null;
     }
-    if (!selectedAddressId.value) {
-      ElMessage.warning("请选择收货地址后再支付");
-      return null;
-    }
+    return payOrder(order);
+  }
 
-    checkoutLoading.value = true;
-    try {
-      const order = await checkoutNormalOrder({
-        remark: checkoutForm.remark || undefined,
-        addressId: selectedAddressId.value
-      });
-      const paidOrder = await payNormalOrder(order.id);
-
-      clearCheckoutForm();
-      await Promise.all([loadProducts(), loadOrders(), loadCartItems()]);
-      ElMessage.success(`普通订单已完成模拟支付，订单号 ${paidOrder.orderNo || order.orderNo}`);
-      return normalizeOrder(paidOrder, "normal");
-    } catch (error) {
-      ElMessage.error(error.message);
-      return null;
-    } finally {
-      checkoutLoading.value = false;
+  function openSeckillPayConfirm(order) {
+    const normalized = normalizeOrder(order, "seckill");
+    if (normalized.status !== 0) {
+      ElMessage.warning("当前秒杀订单状态不允许继续支付");
+      return;
     }
+    pendingSeckillPayOrder.value = normalized;
+    seckillPayConfirmVisible.value = true;
+  }
+
+  function holdPendingSeckillPayOrder() {
+    const order = pendingSeckillPayOrder.value;
+    pendingSeckillPayOrder.value = null;
+    seckillPayConfirmVisible.value = false;
+    return order;
+  }
+
+  async function confirmSeckillPay() {
+    if (!pendingSeckillPayOrder.value) {
+      return null;
+    }
+    return payOrder(pendingSeckillPayOrder.value);
   }
 
   async function payOrder(order) {
@@ -822,109 +824,35 @@ export function useMallApp() {
           ? await payNormalOrder(normalized.id)
           : await paySeckillOrder(normalized.id);
 
-      ElMessage.success(
-        normalized.orderType === "normal" ? "普通订单已模拟支付" : "秒杀订单已模拟支付"
-      );
-      await loadOrders();
-
-      if (selectedOrder.value?.id === normalized.id && selectedOrder.value?.orderType === normalized.orderType) {
-        selectedOrder.value = normalizeOrder(paidOrder, normalized.orderType);
-      }
-      if (pendingCheckoutOrder.value?.id === normalized.id && normalized.orderType === "normal") {
+      const normalizedPaidOrder = normalizeOrder(paidOrder, normalized.orderType);
+      if (normalized.orderType === "normal") {
         pendingCheckoutOrder.value = null;
-      }
-      if (pendingSeckillPayOrder.value?.id === normalized.id && normalized.orderType === "seckill") {
+        await Promise.all([loadOrders(), loadCartItems()]);
+      } else {
         pendingSeckillPayOrder.value = null;
         seckillPayConfirmVisible.value = false;
+        await loadOrders();
       }
-      return paidOrder;
+
+      if (
+        selectedOrder.value?.id === normalized.id &&
+        selectedOrder.value?.orderType === normalized.orderType
+      ) {
+        selectedOrder.value = normalizedPaidOrder;
+      }
+
+      ElMessage.success(normalized.orderType === "normal" ? "普通订单已模拟支付" : "秒杀订单已模拟支付");
+      return normalizedPaidOrder;
     } catch (error) {
       ElMessage.error(error.message);
-      throw error;
-    }
-  }
-
-  function holdPendingCheckoutOrder() {
-    if (!pendingCheckoutOrder.value || pendingCheckoutOrder.value.status !== 0) {
-      pendingCheckoutOrder.value = null;
       return null;
     }
-
-    const heldOrder = pendingCheckoutOrder.value;
-    pendingCheckoutOrder.value = null;
-    ElMessage.info("订单已保留为待支付，可在我的订单继续支付");
-    return heldOrder;
-  }
-
-  function openSeckillPayConfirm(order) {
-    const normalized = normalizeOrder(order, order.orderType || "seckill");
-    if (normalized.orderType !== "seckill") {
-      return;
-    }
-    if (!isOrderPayable(normalized)) {
-      ElMessage.warning("当前秒杀订单状态不允许继续支付");
-      return;
-    }
-    pendingSeckillPayOrder.value = normalized;
-    seckillPayConfirmVisible.value = true;
-  }
-
-  function closeSeckillPayConfirm() {
-    seckillPayConfirmVisible.value = false;
-  }
-
-  function holdPendingSeckillPayOrder() {
-    if (!pendingSeckillPayOrder.value || pendingSeckillPayOrder.value.status !== 0) {
-      pendingSeckillPayOrder.value = null;
-      seckillPayConfirmVisible.value = false;
-      return null;
-    }
-
-    const heldOrder = pendingSeckillPayOrder.value;
-    seckillPayConfirmVisible.value = false;
-    // 稍后支付只关闭确认层，不会取消订单，方便用户去订单中心继续处理。
-    ElMessage.info("秒杀订单已保留为待支付，可在我的订单继续支付");
-    return heldOrder;
-  }
-
-  async function confirmSeckillPay() {
-    if (!pendingSeckillPayOrder.value) {
-      return null;
-    }
-    // 优先消费已经创建好的秒杀待支付订单，避免重复支付或重复建单。
-    const paidOrder = await payOrder(pendingSeckillPayOrder.value);
-    if (!paidOrder) {
-      return null;
-    }
-    pendingSeckillPayOrder.value = null;
-    seckillPayConfirmVisible.value = false;
-    return normalizeOrder(paidOrder, "seckill");
   }
 
   async function cancelOrder(order) {
     const normalized = normalizeOrder(order, order.orderType);
-    if (!isOrderPayable(normalized)) {
+    if (normalized.status !== 0) {
       ElMessage.warning("当前订单状态不允许取消");
-      return null;
-    }
-
-    const isNormalOrder = normalized.orderType === "normal";
-    const orderTypeLabel = isNormalOrder ? "普通订单" : "秒杀订单";
-    const confirmMessage = isNormalOrder
-      ? "取消后订单会变成已取消，系统会自动回补商品库存，是否继续？"
-      : "取消后秒杀订单会变成已取消，系统会自动回补秒杀库存，是否继续？";
-
-    try {
-      await ElMessageBox.confirm(
-        confirmMessage,
-        `取消${orderTypeLabel}`,
-        {
-          type: "warning",
-          confirmButtonText: "确认取消",
-          cancelButtonText: "再看看"
-        }
-      );
-    } catch {
       return null;
     }
 
@@ -933,26 +861,30 @@ export function useMallApp() {
         normalized.orderType === "normal"
           ? await cancelNormalOrder(normalized.id)
           : await cancelSeckillOrder(normalized.id);
-      await Promise.all([
-        loadProducts(),
-        loadSeckillProducts(),
-        loadOrders(),
-        loadCartItems()
-      ]);
 
-      if (selectedOrder.value?.id === normalized.id && selectedOrder.value?.orderType === normalized.orderType) {
-        selectedOrder.value = normalizeOrder(cancelledOrder, normalized.orderType);
-      }
-      if (pendingCheckoutOrder.value?.id === normalized.id) {
-        pendingCheckoutOrder.value = null;
-      }
-      if (pendingSeckillPayOrder.value?.id === normalized.id) {
-        pendingSeckillPayOrder.value = null;
-        seckillPayConfirmVisible.value = false;
+      const normalizedCancelledOrder = normalizeOrder(cancelledOrder, normalized.orderType);
+      if (normalized.orderType === "normal") {
+        if (pendingCheckoutOrder.value?.id === normalized.id) {
+          pendingCheckoutOrder.value = null;
+        }
+        await Promise.all([loadOrders(), loadProducts(), loadCartItems()]);
+      } else {
+        if (pendingSeckillPayOrder.value?.id === normalized.id) {
+          pendingSeckillPayOrder.value = null;
+          seckillPayConfirmVisible.value = false;
+        }
+        await Promise.all([loadOrders(), loadSeckillProducts()]);
       }
 
-      ElMessage.success(`${orderTypeLabel}已取消`);
-      return normalizeOrder(cancelledOrder, normalized.orderType);
+      if (
+        selectedOrder.value?.id === normalized.id &&
+        selectedOrder.value?.orderType === normalized.orderType
+      ) {
+        selectedOrder.value = normalizedCancelledOrder;
+      }
+
+      ElMessage.success(normalized.orderType === "normal" ? "普通订单已取消" : "秒杀订单已取消");
+      return normalizedCancelledOrder;
     } catch (error) {
       ElMessage.error(error.message);
       return null;
@@ -966,11 +898,11 @@ export function useMallApp() {
         normalized.orderType === "normal"
           ? await fetchNormalPayStatus(normalized.id)
           : await fetchSeckillPayStatus(normalized.id);
-      ElMessage.info(payStatus.message || "已获取支付状态");
+      ElMessage.info(payStatus.message || `当前订单状态：${getOrderStatusText(normalized.status)}`);
       return payStatus;
     } catch (error) {
       ElMessage.error(error.message);
-      throw error;
+      return null;
     }
   }
 
@@ -1010,107 +942,98 @@ export function useMallApp() {
     if (normalized.orderType === "normal") {
       return normalized.items?.map((item) => item.productName).join("、") || "普通商品订单";
     }
-    return `秒杀商品 ${normalized.productId}`;
+    return normalized.productName || `秒杀商品 ${normalized.productId}`;
   }
 
   function getAddressSummary(order) {
-    const parts = [order.receiver, order.mobile, order.detail].filter(Boolean);
-    return parts.length ? parts.join(" / ") : "未填写收货地址";
+    if (order.receiver || order.mobile || order.detail) {
+      return [order.receiver, order.mobile, order.detail].filter(Boolean).join(" ");
+    }
+
+    const snapshot = order.addressSnapshot;
+    if (!snapshot) {
+      return "未填写收货地址";
+    }
+
+    try {
+      const address = typeof snapshot === "string" ? JSON.parse(snapshot) : snapshot;
+      return [address.receiver, address.mobile, address.detail].filter(Boolean).join(" ");
+    } catch {
+      return snapshot;
+    }
   }
 
   function getOrderStatusNote(order) {
-    const normalized = normalizeOrder(order, order?.orderType);
-    if (!normalized) {
-      return "";
+    const normalized = normalizeOrder(order, order.orderType);
+    if (normalized.status === 0) {
+      return "当前订单待支付，可继续支付";
     }
-
+    if (normalized.status === 1) {
+      return normalized.payTime ? `支付时间 ${formatDateTime(normalized.payTime)}` : "当前订单已完成支付";
+    }
     if (normalized.status === 2) {
       const reason = normalized.cancelReason || "订单已取消";
-      if (normalized.cancelTime) {
-        return `${reason}，取消时间 ${formatDateTime(normalized.cancelTime)}`;
-      }
-      return reason;
+      return normalized.cancelTime ? `${reason} · ${formatDateTime(normalized.cancelTime)}` : reason;
     }
-
-    if (normalized.status === 1 && normalized.payTime) {
-      return `支付时间 ${formatDateTime(normalized.payTime)}`;
-    }
-
-    if (normalized.status === 0) {
-      return normalized.orderType === "normal"
-        ? "当前订单待支付，可继续支付或取消订单"
-        : "当前订单待支付，可继续支付";
-    }
-
     return "";
   }
 
-  function handleCheckoutAddressChange(addressId) {
-    selectedAddressId.value = addressId ?? null;
+  function handleCheckoutAddressChange(value) {
+    selectedAddressId.value = value ?? null;
   }
 
-  function syncPendingCheckoutOrder(normalOrderList = []) {
-    if (!pendingCheckoutOrder.value) {
-      return;
-    }
-
-    const latestOrder = normalOrderList.find((order) => order.id === pendingCheckoutOrder.value.id);
-    if (!latestOrder) {
-      pendingCheckoutOrder.value = null;
-      return;
-    }
-
-    pendingCheckoutOrder.value = normalizeOrder(latestOrder, "normal");
-    if (pendingCheckoutOrder.value.status !== 0) {
-      pendingCheckoutOrder.value = null;
-    }
+  function persistCart() {
+    persistCartItems(cartItems.value);
   }
 
-  function syncPendingSeckillPayOrder(seckillOrderList = []) {
-    if (!pendingSeckillPayOrder.value) {
-      return;
-    }
-
-    const latestOrder = seckillOrderList.find((order) => order.id === pendingSeckillPayOrder.value.id);
-    if (!latestOrder) {
-      pendingSeckillPayOrder.value = null;
-      seckillPayConfirmVisible.value = false;
-      return;
-    }
-
-    pendingSeckillPayOrder.value = normalizeOrder(latestOrder, "seckill");
-    if (pendingSeckillPayOrder.value.status !== 0) {
-      pendingSeckillPayOrder.value = null;
-      seckillPayConfirmVisible.value = false;
-    }
+  function syncCartSnapshots() {
+    const seckillMap = new Map(seckillProducts.value.map((product) => [product.id, product]));
+    cartItems.value = cartItems.value.map((item) => {
+      if (item.productType !== "seckill") {
+        return item;
+      }
+      const latestProduct = seckillMap.get(item.productId);
+      if (!latestProduct) {
+        return item;
+      }
+      return {
+        ...createLocalCartItem(latestProduct, "seckill"),
+        quantity: item.quantity
+      };
+    });
+    persistCart();
   }
 
-  function clearCheckoutForm() {
-    checkoutForm.remark = "";
-  }
+  watch(
+    () => authState.token,
+    async (token) => {
+      if (!initialized) {
+        return;
+      }
 
-  function upsertCartItem(serverItem) {
-    const normalized = normalizeCartItem(serverItem);
-    const index = cartItems.value.findIndex((item) => item.cartItemId === normalized.cartItemId);
-    if (index === -1) {
-      cartItems.value.unshift(normalized);
-      return;
+      if (!token) {
+        resetUserState();
+        return;
+      }
+
+      await Promise.all([loadProfile(), loadOrders(), loadCartItems(), loadAddresses()]);
     }
-    cartItems.value.splice(index, 1, normalized);
-  }
+  );
 
   return {
     authState,
     profile,
     profileLoading,
-    addresses,
-    addressesLoading,
     products,
     seckillProducts,
     normalOrders,
     seckillOrders,
     orders,
     recentOrders,
+    addresses,
+    addressesLoading,
+    selectedAddress,
+    selectedAddressId,
     productsLoading,
     seckillProductsLoading,
     ordersLoading,
@@ -1126,13 +1049,12 @@ export function useMallApp() {
     currentTime,
     productFilters,
     productCategories,
+    productTotalCount,
     cartItems,
     normalCartItems,
-    selectedNormalCartItems,
-    selectableNormalCartItems,
-    normalCartAllSelected,
-    checkoutFormComplete,
     seckillCartItems,
+    selectedNormalCartItems,
+    normalCartAllSelected,
     featuredNormalProducts,
     homeShelves,
     flashProducts,
@@ -1140,12 +1062,11 @@ export function useMallApp() {
     checkoutSummary,
     orderStats,
     checkoutForm,
+    checkoutFormComplete,
+    profileDisplayName,
     pendingCheckoutOrder,
     pendingSeckillPayOrder,
     seckillPayConfirmVisible,
-    selectedAddress,
-    selectedAddressId,
-    profileDisplayName,
     init,
     dispose,
     loadProfile,
@@ -1163,19 +1084,17 @@ export function useMallApp() {
     canSeckill,
     handleSeckill,
     addToCart,
-    prepareImmediateCheckout,
     updateCartQuantity,
     updateCartSelected,
     toggleAllNormalCart,
     removeFromCart,
     isInCart,
     getCartItemPrice,
-    checkoutNormalCart,
+    prepareImmediateCheckout,
     createPendingCheckoutOrder,
-    submitCheckoutAndPay,
     holdPendingCheckoutOrder,
+    submitCheckoutAndPay,
     openSeckillPayConfirm,
-    closeSeckillPayConfirm,
     holdPendingSeckillPayOrder,
     confirmSeckillPay,
     payOrder,
@@ -1192,45 +1111,100 @@ export function useMallApp() {
   };
 }
 
-function inferProductType(product) {
-  return Object.prototype.hasOwnProperty.call(product, "seckillPrice")
-    ? "seckill"
-    : "normal";
+function readCart() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(CART_STORAGE_KEY) || "[]");
+    return Array.isArray(stored) ? stored.map((item) => normalizeDraftCartItem(item)) : [];
+  } catch {
+    return [];
+  }
 }
 
-function normalizeCartItem(item) {
+function persistCartItems(items) {
+  localStorage.setItem(
+    CART_STORAGE_KEY,
+    JSON.stringify(items.filter((item) => item.productType === "seckill"))
+  );
+}
+
+function inferProductType(product) {
+  return Object.prototype.hasOwnProperty.call(product, "seckillPrice") ? "seckill" : "normal";
+}
+
+function buildCartKey(productId, type) {
+  return `${type}:${productId}`;
+}
+
+function createLocalCartItem(product, type) {
+  return normalizeDraftCartItem({
+    cartKey: buildCartKey(product.id, type),
+    productType: type,
+    id: product.id,
+    productId: product.id,
+    name: product.name,
+    subtitle: product.subtitle ?? "",
+    price: product.price,
+    marketPrice: product.marketPrice ?? null,
+    seckillPrice: product.seckillPrice ?? null,
+    displayPrice: type === "seckill" ? product.seckillPrice ?? product.price : product.price,
+    stock: product.stock,
+    startTime: product.startTime ?? null,
+    endTime: product.endTime ?? null,
+    status: product.status,
+    mainImage: product.mainImage ?? "",
+    detail: product.detail ?? "",
+    quantity: 1,
+    selected: false,
+    canCheckout: false
+  });
+}
+
+function normalizeDraftCartItem(item) {
   return {
-    cartKey: `normal:${item.id}`,
-    cartItemId: item.id,
-    productType: "normal",
-    id: item.productId,
-    productId: item.productId,
-    name: item.productName,
-    subtitle: item.productSubtitle ?? "",
-    price: item.price,
-    marketPrice: item.marketPrice ?? null,
-    displayPrice: item.price,
-    stock: item.stock,
-    status: item.status,
-    mainImage: item.productImage ?? "",
-    quantity: item.quantity ?? 1,
-    selected: Boolean(item.selected),
-    canCheckout: Boolean(item.canCheckout),
-    itemAmount: item.itemAmount ?? null,
-    createTime: item.createTime,
-    updateTime: item.updateTime
+    cartKey: item.cartKey || buildCartKey(item.productId || item.id, item.productType || "seckill"),
+    cartItemId: item.cartItemId ?? null,
+    productType: item.productType || "seckill",
+    id: item.id,
+    productId: item.productId ?? item.id,
+    name: item.name,
+    subtitle: item.subtitle ?? "",
+    price: Number(item.price ?? 0),
+    marketPrice: item.marketPrice == null ? null : Number(item.marketPrice),
+    seckillPrice: item.seckillPrice == null ? null : Number(item.seckillPrice),
+    displayPrice: Number(item.displayPrice ?? item.seckillPrice ?? item.price ?? 0),
+    stock: Number(item.stock ?? 0),
+    startTime: item.startTime ?? null,
+    endTime: item.endTime ?? null,
+    status: item.status ?? 1,
+    mainImage: item.mainImage ?? "",
+    detail: item.detail ?? "",
+    quantity: Number(item.quantity ?? 1),
+    selected: false,
+    canCheckout: false
   };
 }
 
-function normalizeAddress(address) {
+function normalizeCartItem(item) {
+  const productId = Number(item.productId ?? item.id);
   return {
-    id: address.id,
-    receiver: address.receiver ?? "",
-    mobile: address.mobile ?? "",
-    detail: address.detail ?? "",
-    isDefault: Boolean(address.isDefault),
-    createTime: address.createTime,
-    updateTime: address.updateTime
+    cartKey: buildCartKey(productId, "normal"),
+    cartItemId: item.id,
+    productType: "normal",
+    id: productId,
+    productId,
+    name: item.productName ?? item.name ?? "普通商品",
+    subtitle: item.productSubtitle ?? item.subtitle ?? "",
+    price: Number(item.price ?? item.salePrice ?? 0),
+    marketPrice: item.marketPrice == null ? null : Number(item.marketPrice),
+    seckillPrice: null,
+    displayPrice: Number(item.price ?? item.salePrice ?? 0),
+    stock: Number(item.stock ?? 0),
+    status: item.status ?? 1,
+    mainImage: item.productImage ?? item.mainImage ?? "",
+    detail: item.detail ?? "",
+    quantity: Number(item.quantity ?? 1),
+    selected: Boolean(item.selected),
+    canCheckout: item.canCheckout !== false && Number(item.stock ?? 0) > 0 && Number(item.status ?? 1) === 1
   };
 }
 
@@ -1244,7 +1218,7 @@ function normalizeOrder(order, explicitType = null) {
   const displayAmount =
     orderType === "normal"
       ? Number(order.payAmount ?? order.totalAmount ?? 0)
-      : Number(order.seckillPrice ?? 0);
+      : Number(order.seckillPrice ?? order.payAmount ?? 0);
 
   return {
     ...order,
@@ -1269,13 +1243,39 @@ function normalizeOrderRef(orderOrId, explicitType) {
 }
 
 function inferOrderType(order) {
-  return Object.prototype.hasOwnProperty.call(order, "orderNo") ||
-    Object.prototype.hasOwnProperty.call(order, "orderStatus") ||
-    Array.isArray(order.items)
-    ? "normal"
-    : "seckill";
+  if (Array.isArray(order.items) || Object.prototype.hasOwnProperty.call(order, "payAmount")) {
+    return "normal";
+  }
+  return "seckill";
 }
 
 function getCategoryName(categoryId) {
-  return CATEGORY_NAME_MAP[categoryId] || `鍒嗙被 ${categoryId}`;
+  return CATEGORY_NAME_MAP[categoryId] || `分类 ${categoryId}`;
+}
+
+function buildCategoryStats(sourceProducts = []) {
+  const groups = new Map(
+    Object.entries(CATEGORY_NAME_MAP).map(([id, label]) => [
+      Number(id),
+      {
+        id: Number(id),
+        label,
+        count: 0
+      }
+    ])
+  );
+
+  for (const product of sourceProducts) {
+    const categoryId = Number(product.categoryId ?? 0);
+    if (!groups.has(categoryId)) {
+      groups.set(categoryId, {
+        id: categoryId,
+        label: getCategoryName(categoryId),
+        count: 0
+      });
+    }
+    groups.get(categoryId).count += 1;
+  }
+
+  return [...groups.values()].sort((left, right) => left.id - right.id);
 }

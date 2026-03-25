@@ -186,7 +186,7 @@ async function handleSetDefault(address) {
         <el-button type="primary" @click="openCreateDialog">新增地址</el-button>
       </div>
 
-      <div v-if="mallApp.addresses.length" class="address-book-grid">
+      <div v-if="mallApp.addresses?.length" class="address-book-grid">
         <article
           v-for="address in mallApp.addresses"
           :key="address.id"

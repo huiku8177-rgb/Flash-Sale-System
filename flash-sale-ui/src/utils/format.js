@@ -101,7 +101,7 @@ export function getOrderStatusText(status) {
     3: "已发货",
     4: "已完成"
   };
-  return mapping[status] || `未知状态(${status})`;
+  return mapping[status] || `未知状态（${status}）`;
 }
 
 export function getOrderStatusType(status) {

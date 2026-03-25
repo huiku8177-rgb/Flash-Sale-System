@@ -9,13 +9,11 @@ const visibleCount = ref(6);
 const loadMoreAnchor = ref(null);
 let observer = null;
 
-const categoryEntries = computed(() => {
-  return mallApp.productCategories.length
+const categoryEntries = computed(() =>
+  mallApp.productCategories.length
     ? mallApp.productCategories
-    : [
-        { id: null, label: "全部商品", count: mallApp.products.length }
-      ];
-});
+    : [{ id: null, label: "全部商品", count: mallApp.productTotalCount }]
+);
 
 const bannerProducts = computed(() => {
   const seckillItems = [...mallApp.seckillProducts].filter(
@@ -28,7 +26,7 @@ const bannerProducts = computed(() => {
         id: "flash-banner",
         title: "秒杀会场已就绪",
         subtitle: "Flash Sale",
-        copy: "秒杀商品、异步下单、支付状态查询都已经接入，点击后可直接进入秒杀页面。",
+        copy: "秒杀商品、异步建单、支付状态查询都已经接入，点击后可直接进入秒杀频道。",
         accent: "会场入口",
         metricLabel: "当前商品",
         metricValue: "0"
@@ -50,29 +48,29 @@ const bannerProducts = computed(() => {
       title: hottest.name,
       subtitle: "高客单秒杀",
       copy: "优先展示秒杀价更高的商品，让首页可以直接把用户引导到冲击力更强的活动位。",
-      accent: "High Price",
+      accent: "高热商品",
       metricLabel: "秒杀价",
       metricValue: formatCurrency(hottest.seckillPrice)
     },
     {
       id: richest.id,
       title: richest.name,
-      subtitle: "稳定供给",
-      copy: "库存更充足的秒杀商品适合作为会场承接位，减少点进来后立刻抢空的概率。",
-      accent: "High Stock",
+      subtitle: "稳态承接",
+      copy: "库存更充足的秒杀商品适合作为活动入口，减少用户刚进入会场就售罄的落差感。",
+      accent: "库存充足",
       metricLabel: "剩余库存",
       metricValue: `${richest.stock}`
     }
   ];
 });
 
-const visibleProducts = computed(() => {
-  return (mallApp.featuredNormalProducts || []).slice(0, visibleCount.value);
-});
+const visibleProducts = computed(() =>
+  (mallApp.featuredNormalProducts || []).slice(0, visibleCount.value)
+);
 
-const hasMoreProducts = computed(() => {
-  return visibleCount.value < (mallApp.featuredNormalProducts || []).length;
-});
+const hasMoreProducts = computed(
+  () => visibleCount.value < (mallApp.featuredNormalProducts || []).length
+);
 
 function goFlash() {
   router.push({ name: "app-flash" });
@@ -157,7 +155,7 @@ onBeforeUnmount(() => {
           @click="mallApp.clearProductFilters"
         >
           <span>全部商品</span>
-          <small>{{ mallApp.products.length }}</small>
+          <small>{{ mallApp.productTotalCount }}</small>
         </button>
         <button
           v-for="entry in categoryEntries"
@@ -173,10 +171,10 @@ onBeforeUnmount(() => {
       </aside>
 
       <div class="hero-center">
-        <el-carousel height="296px" indicator-position="outside">
+        <el-carousel height="296px" indicator-position="outside" class="home-carousel">
           <el-carousel-item v-for="banner in bannerProducts" :key="banner.id">
             <article class="desktop-banner desktop-banner-clickable" @click="goFlash">
-              <div>
+              <div class="desktop-banner-copy">
                 <p class="eyebrow">{{ banner.subtitle }}</p>
                 <h2>{{ banner.title }}</h2>
                 <p>{{ banner.copy }}</p>
@@ -198,17 +196,23 @@ onBeforeUnmount(() => {
           <article class="shortcut-card shortcut-orange">
             <span>普通商品</span>
             <strong>{{ mallApp.products.length }}</strong>
-            <small>支持列表、详情、加入购物车、下单和模拟支付。</small>
+            <small>
+              支持列表、详情、加入购物车、下单和模拟支付，基本覆盖常规商城主链路。
+            </small>
           </article>
           <article class="shortcut-card shortcut-blue">
             <span>秒杀商品</span>
             <strong>{{ mallApp.seckillProducts.length }}</strong>
-            <small>支持秒杀请求、轮询结果、异步建单和模拟支付。</small>
+            <small>
+              支持发起秒杀、轮询结果、待支付确认和订单继续支付，适合展示抢购场景。
+            </small>
           </article>
           <article class="shortcut-card shortcut-green">
             <span>待支付订单</span>
             <strong>{{ mallApp.orderStats.created }}</strong>
-            <small>普通订单和秒杀订单都能在个人中心继续完成支付。</small>
+            <small>
+              普通订单和秒杀订单都支持先创建待支付订单，再在订单中心继续完成支付。
+            </small>
           </article>
         </section>
       </div>
@@ -238,7 +242,12 @@ onBeforeUnmount(() => {
             <span>库存 {{ product.stock }}</span>
           </div>
           <h4>{{ product.name }}</h4>
-          <p>{{ product.subtitle || "适合作为商城首页推荐位的普通商品卡片。" }}</p>
+          <p>
+            {{
+              product.subtitle ||
+              "适合作为首页推荐位展示的普通商品，支持立即购买和加入购物车。"
+            }}
+          </p>
           <div class="desktop-price-row">
             <strong>{{ formatCurrency(product.price) }}</strong>
             <span>{{ formatCurrency(product.marketPrice) }}</span>
@@ -263,7 +272,7 @@ onBeforeUnmount(() => {
             <p class="eyebrow">Quick Checkout</p>
             <h3>购物车概览</h3>
           </div>
-          <el-button text @click="router.push({ name: 'app-cart' })">去结算</el-button>
+          <el-button text @click="router.push({ name: 'app-cart' })">去购物车</el-button>
         </div>
         <div class="home-metric-grid">
           <div class="home-metric-card">

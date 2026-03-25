@@ -1,173 +1,64 @@
 <script setup>
-import { reactive, ref } from "vue";
-import { useRouter } from "vue-router";
+import { onBeforeUnmount, onMounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
+import AuthForm from "../components/auth/AuthForm.vue";
+import AuthScene from "../components/auth/AuthScene.vue";
 import { login, register } from "../api/auth";
+import { useAuthForm } from "../composables/useAuthForm";
 import { setSession } from "../stores/auth";
 
+const route = useRoute();
 const router = useRouter();
-const activeTab = ref("login");
-const submitting = ref(false);
 
-const loginForm = reactive({
-  username: "",
-  password: ""
+const { sceneInput, formModel } = useAuthForm({
+  route,
+  router,
+  loginAction: login,
+  registerAction: register,
+  notify: ElMessage,
+  setSession
 });
 
-const registerForm = reactive({
-  username: "",
-  password: "",
-  confirmPassword: ""
+onMounted(() => {
+  document.body.classList.add("auth-page-mode");
 });
 
-async function submitLogin() {
-  if (!loginForm.username || !loginForm.password) {
-    ElMessage.warning("请输入用户名和密码");
-    return;
-  }
-
-  submitting.value = true;
-  try {
-    const user = await login(loginForm);
-    setSession(user);
-    ElMessage.success(`欢迎回来，${user.username}`);
-    router.push({ name: "app-home" });
-  } catch (error) {
-    ElMessage.error(error.message);
-  } finally {
-    submitting.value = false;
-  }
-}
-
-async function submitRegister() {
-  if (!registerForm.username || !registerForm.password) {
-    ElMessage.warning("请补全注册信息");
-    return;
-  }
-
-  if (registerForm.password !== registerForm.confirmPassword) {
-    ElMessage.warning("两次输入的密码不一致");
-    return;
-  }
-
-  submitting.value = true;
-  try {
-    await register({
-      username: registerForm.username,
-      password: registerForm.password
-    });
-    ElMessage.success("注册成功，请直接登录");
-    activeTab.value = "login";
-    loginForm.username = registerForm.username;
-    loginForm.password = registerForm.password;
-    registerForm.confirmPassword = "";
-  } catch (error) {
-    ElMessage.error(error.message);
-  } finally {
-    submitting.value = false;
-  }
-}
+onBeforeUnmount(() => {
+  document.body.classList.remove("auth-page-mode");
+});
 </script>
 
 <template>
-  <div class="auth-shell">
-    <div class="auth-hero">
-      <p class="eyebrow">Flash Sale System</p>
-      <h1>商城前端联调入口</h1>
-      <p class="hero-copy">
-        当前页面已经对接登录、注册、商品、秒杀、订单和个人中心接口，登录后可直接体验完整商城流程。
-      </p>
-      <div class="hero-metrics">
-        <div>
-          <span>接口入口</span>
-          <strong>/auth /product /seckill-product /seckill /order</strong>
-        </div>
-        <div>
-          <span>核心交互</span>
-          <strong>登录、下单、轮询结果、支付、查状态</strong>
-        </div>
-      </div>
-    </div>
-
-    <el-card class="auth-card" shadow="never">
-      <template #header>
-        <div class="auth-card-header">
-          <span>账号接入</span>
-          <small>JWT + Gateway</small>
-        </div>
-      </template>
-
-      <el-tabs v-model="activeTab" stretch>
-        <el-tab-pane label="登录" name="login">
-          <el-form label-position="top">
-            <el-form-item label="用户名">
-              <el-input
-                v-model="loginForm.username"
-                placeholder="例如 alice"
-                size="large"
-              />
-            </el-form-item>
-            <el-form-item label="密码">
-              <el-input
-                v-model="loginForm.password"
-                type="password"
-                show-password
-                placeholder="请输入密码"
-                size="large"
-                @keyup.enter="submitLogin"
-              />
-            </el-form-item>
-            <el-button
-              type="primary"
-              class="submit-button"
-              size="large"
-              :loading="submitting"
-              @click="submitLogin"
-            >
-              登录并进入商城
-            </el-button>
-          </el-form>
-        </el-tab-pane>
-
-        <el-tab-pane label="注册" name="register">
-          <el-form label-position="top">
-            <el-form-item label="用户名">
-              <el-input
-                v-model="registerForm.username"
-                placeholder="创建一个账号名"
-                size="large"
-              />
-            </el-form-item>
-            <el-form-item label="密码">
-              <el-input
-                v-model="registerForm.password"
-                type="password"
-                show-password
-                placeholder="输入登录密码"
-                size="large"
-              />
-            </el-form-item>
-            <el-form-item label="确认密码">
-              <el-input
-                v-model="registerForm.confirmPassword"
-                type="password"
-                show-password
-                placeholder="再次输入密码"
-                size="large"
-                @keyup.enter="submitRegister"
-              />
-            </el-form-item>
-            <el-button
-              class="submit-button submit-button-secondary"
-              size="large"
-              :loading="submitting"
-              @click="submitRegister"
-            >
-              创建账号
-            </el-button>
-          </el-form>
-        </el-tab-pane>
-      </el-tabs>
-    </el-card>
+  <div class="auth-page">
+    <main class="auth-stage">
+      <AuthScene :input="sceneInput" />
+      <AuthForm :model="formModel" />
+    </main>
   </div>
 </template>
+
+<style scoped>
+:global(body.auth-page-mode) {
+  min-width: 320px;
+  background: #ffffff;
+}
+
+.auth-page {
+  min-height: 100vh;
+  background: #ffffff;
+  color: #111827;
+}
+
+.auth-stage {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(460px, 0.98fr);
+}
+
+@media (max-width: 1120px) {
+  .auth-stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>

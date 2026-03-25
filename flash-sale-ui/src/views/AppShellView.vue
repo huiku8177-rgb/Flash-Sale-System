@@ -1,8 +1,8 @@
-<script setup>
+ <script setup>
 import { ArrowDown } from "@element-plus/icons-vue";
 import { computed, inject } from "vue";
-import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
+import { useRoute, useRouter } from "vue-router";
 import { logout } from "../api/auth";
 import { clearSession } from "../stores/auth";
 import {
@@ -48,33 +48,30 @@ const currentTitle = computed(() => {
   return mapping[route.name] || "商城首页";
 });
 
-const isProfileRoute = computed(() => {
-  return [
-    "app-profile",
-    "app-orders",
-    "app-account-profile",
-    "app-account-security"
-  ].includes(route.name);
-});
+const isProfileRoute = computed(() =>
+  ["app-profile", "app-orders", "app-account-profile", "app-account-security"].includes(
+    route.name
+  )
+);
 
-// Keep the right-side helper cards only on the homepage.
+// 只有首页保留右侧栏，其它页面改成单列内容，避免商城主视图被信息卡打断。
 const showHomeSidebar = computed(() => route.name === "app-home");
 
-const productApiPath = computed(() => {
-  return mallApp.productDetailType === "seckill"
+const productApiPath = computed(() =>
+  mallApp.productDetailType === "seckill"
     ? "/seckill-product/products/{id}"
-    : "/product/products/{id}";
-});
+    : "/product/products/{id}"
+);
 
-const selectedOrderAmount = computed(() => {
-  return mallApp.selectedOrder ? mallApp.getOrderDisplayAmount(mallApp.selectedOrder) : 0;
-});
+const selectedOrderAmount = computed(() =>
+  mallApp.selectedOrder ? mallApp.getOrderDisplayAmount(mallApp.selectedOrder) : 0
+);
 
-const seckillPayOrderAmount = computed(() => {
-  return mallApp.pendingSeckillPayOrder
+const seckillPayOrderAmount = computed(() =>
+  mallApp.pendingSeckillPayOrder
     ? mallApp.getOrderDisplayAmount(mallApp.pendingSeckillPayOrder)
-    : 0;
-});
+    : 0
+);
 
 const searchKeyword = computed({
   get() {
@@ -89,7 +86,7 @@ async function handleLogout() {
   try {
     await logout();
   } catch {
-    // noop
+    // 即使退出接口失败，也要清掉本地会话，防止页面停留在伪登录态。
   } finally {
     clearSession();
     router.push({ name: "login" });
@@ -101,7 +98,7 @@ function goLogin() {
 }
 
 function goRegister() {
-  router.push({ name: "login", query: { mode: "register" } });
+  router.push({ name: "register" });
 }
 
 async function handleSearch() {
@@ -150,13 +147,17 @@ function fillKeyword(keyword) {
   searchKeyword.value = keyword;
   handleSearch();
 }
+
+function getSidebarOrderNumber(order) {
+  return order.orderNo || `#${order.id}`;
+}
 </script>
 
 <template>
   <div class="web-shell">
     <div class="top-utility-bar">
       <div class="utility-inner">
-        <div class="utility-links">
+        <div class="utility-links utility-links--left">
           <template v-if="isAuthenticated">
             <span>欢迎回来，{{ mallApp.profileDisplayName }}</span>
             <el-dropdown trigger="hover" @command="handleProfileCommand">
@@ -182,13 +183,14 @@ function fillKeyword(keyword) {
             <button type="button" @click="goLogin">请登录</button>
             <button type="button" @click="goRegister">免费注册</button>
           </template>
-          <button type="button" @click="jumpNav('app-cart')">购物车</button>
-          <button type="button" @click="jumpNav('app-flash')">秒杀频道</button>
         </div>
 
-        <div class="utility-links">
+        <div class="utility-links utility-links--right">
           <span>当前页面：{{ currentTitle }}</span>
-          <button v-if="isAuthenticated" type="button" @click="handleLogout">退出登录</button>
+          <template v-if="isAuthenticated">
+            <button type="button" @click="jumpNav('app-orders')">我的订单</button>
+            <button type="button" @click="handleLogout">退出登录</button>
+          </template>
           <template v-else>
             <button type="button" @click="goLogin">登录</button>
             <button type="button" @click="goRegister">注册</button>
@@ -199,95 +201,105 @@ function fillKeyword(keyword) {
 
     <header class="site-header">
       <div class="site-header-inner">
-        <button class="brand-block" type="button" @click="jumpNav('app-home')">
-          <span class="brand-mark">FS</span>
-          <div>
-            <strong>Flash Sale Mall</strong>
-            <small>普通商品与秒杀商品一体化前端</small>
-          </div>
-        </button>
+        <!-- 主头部只保留品牌、搜索和购物车，把后台味较重的刷新动作下沉到页面内容区。 -->
+        <div class="site-header-main">
+          <button class="brand-block" type="button" @click="jumpNav('app-home')">
+            <span class="brand-mark">FS</span>
+            <div>
+              <strong>Flash Sale Mall</strong>
+              <small>普通商品与秒杀商品一体化前台</small>
+            </div>
+          </button>
 
-        <div class="search-stack">
-          <div class="search-bar">
-            <el-input
-              v-model="searchKeyword"
-              placeholder="搜索普通商品，例如：耳机、键盘、零食"
-              size="large"
-              @keyup.enter="handleSearch"
-            />
-            <el-button type="danger" size="large" @click="handleSearch">搜索</el-button>
+          <div class="search-stack">
+            <div class="search-bar">
+              <el-input
+                v-model="searchKeyword"
+                placeholder="搜索普通商品，例如：耳机、键盘、零食"
+                size="large"
+                @keyup.enter="handleSearch"
+              />
+              <el-button type="danger" size="large" @click="handleSearch">搜索</el-button>
+            </div>
+            <div class="hot-keywords">
+              <span>热门搜索</span>
+              <button
+                v-for="keyword in hotKeywords"
+                :key="keyword"
+                type="button"
+                class="hot-keyword-pill"
+                @click="fillKeyword(keyword)"
+              >
+                {{ keyword }}
+              </button>
+            </div>
           </div>
-          <div class="hot-keywords">
-            <span>热门搜索：</span>
-            <button
-              v-for="keyword in hotKeywords"
-              :key="keyword"
-              type="button"
-              @click="fillKeyword(keyword)"
+
+          <div class="header-actions">
+            <el-badge :value="mallApp.cartSummary.count" :hidden="!mallApp.cartSummary.count">
+              <el-button plain @click="jumpNav('app-cart')">购物车</el-button>
+            </el-badge>
+            <el-button
+              v-if="isAuthenticated"
+              plain
+              @click="jumpNav('app-orders')"
             >
-              {{ keyword }}
+              我的订单
+            </el-button>
+            <el-button v-else plain @click="goLogin">登录</el-button>
+          </div>
+        </div>
+
+        <!-- 导航与个人入口并入主头部底部，形成两层信息结构。 -->
+        <nav class="site-header-nav" aria-label="主导航">
+          <div class="site-nav-group">
+            <span class="site-nav-label">全部频道</span>
+
+            <button
+              v-for="item in navItems"
+              :key="item.routeName"
+              type="button"
+              class="site-nav-item"
+              :class="{ active: route.name === item.routeName }"
+              @click="jumpNav(item.routeName)"
+            >
+              {{ item.label }}
             </button>
           </div>
-        </div>
 
-        <div class="header-actions">
-          <el-badge :value="mallApp.cartSummary.count" :hidden="!mallApp.cartSummary.count">
-            <el-button plain @click="jumpNav('app-cart')">购物车</el-button>
-          </el-badge>
-          <el-button plain @click="mallApp.refreshMallData">刷新全部</el-button>
-          <el-button plain @click="mallApp.loadOrders">刷新订单</el-button>
-        </div>
+          <div class="site-nav-actions">
+            <template v-if="isAuthenticated">
+              <el-dropdown trigger="hover" @command="handleProfileCommand">
+                <button
+                  type="button"
+                  class="site-nav-item site-nav-item--menu"
+                  :class="{ active: isProfileRoute }"
+                >
+                  个人中心
+                  <el-icon><ArrowDown /></el-icon>
+                </button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="item in profileMenuItems"
+                      :key="item.routeName"
+                      :command="item.routeName"
+                    >
+                      {{ item.label }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </template>
+            <template v-else>
+              <button type="button" class="site-nav-item site-nav-item--menu" @click="handleProfileEntry">
+                登录 / 注册
+              </button>
+            </template>
+          </div>
+        </nav>
       </div>
     </header>
-
-    <nav class="channel-bar">
-      <div class="channel-inner">
-        <div class="channel-title">全部频道</div>
-
-        <button
-          v-for="item in navItems"
-          :key="item.routeName"
-          type="button"
-          class="channel-link"
-          :class="{ active: route.name === item.routeName }"
-          @click="jumpNav(item.routeName)"
-        >
-          {{ item.label }}
-        </button>
-
-        <template v-if="isAuthenticated">
-          <el-dropdown trigger="hover" @command="handleProfileCommand">
-            <button
-              type="button"
-              class="channel-link channel-link-menu"
-              :class="{ active: isProfileRoute }"
-            >
-              个人中心
-              <el-icon><ArrowDown /></el-icon>
-            </button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item
-                  v-for="item in profileMenuItems"
-                  :key="item.routeName"
-                  :command="item.routeName"
-                >
-                  {{ item.label }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </template>
-        <button
-          v-else
-          type="button"
-          class="channel-link channel-link-menu"
-          @click="handleProfileEntry"
-        >
-          登录 / 注册
-        </button>
-      </div>
-    </nav>
 
     <div class="portal-frame" :class="{ 'portal-frame--home': showHomeSidebar }">
       <main class="portal-main">
@@ -298,7 +310,7 @@ function fillKeyword(keyword) {
         <section class="sidebar-card">
           <div class="sidebar-head">
             <div>
-              <p class="eyebrow">最近订单</p>
+              <p class="eyebrow">Latest Orders</p>
               <h3>最近订单</h3>
             </div>
             <el-button text @click="jumpNav('app-orders')">更多</el-button>
@@ -311,11 +323,23 @@ function fillKeyword(keyword) {
                 class="sidebar-order-item"
               >
                 <div class="sidebar-order-info">
-                  <strong>{{ order.orderNo || `#${order.id}` }}</strong>
-                  <small>{{ formatDateTime(order.createTime) }}</small>
+                  <span class="sidebar-order-label">订单号</span>
+                  <strong class="sidebar-order-no" :title="getSidebarOrderNumber(order)">
+                    {{ getSidebarOrderNumber(order) }}
+                  </strong>
+                  <div class="sidebar-order-subline">
+                    <small>{{ formatDateTime(order.createTime) }}</small>
+                    <em>{{ formatCurrency(mallApp.getOrderDisplayAmount(order)) }}</em>
+                  </div>
                 </div>
                 <div class="sidebar-order-meta">
-                  <span>{{ getOrderTypeText(order.orderType) }}</span>
+                  <span class="sidebar-order-tag">{{ getOrderTypeText(order.orderType) }}</span>
+                  <span
+                    class="sidebar-order-tag sidebar-order-tag--status"
+                    :class="`is-${getOrderStatusType(order.status)}`"
+                  >
+                    {{ getOrderStatusText(order.status) }}
+                  </span>
                   <button type="button" @click="mallApp.openOrder(order)">详情</button>
                 </div>
               </article>
@@ -325,18 +349,14 @@ function fillKeyword(keyword) {
                 :image-size="80"
               />
             </template>
-            <el-empty
-              v-else
-              description="登录后可查看最近订单"
-              :image-size="80"
-            />
+            <el-empty v-else description="登录后可查看最近订单" :image-size="80" />
           </div>
         </section>
 
         <section class="sidebar-card">
           <div class="sidebar-head">
             <div>
-              <p class="eyebrow">购物车草稿</p>
+              <p class="eyebrow">Cart Draft</p>
               <h3>购物车草稿</h3>
             </div>
             <el-button text @click="jumpNav('app-cart')">查看</el-button>
@@ -349,7 +369,9 @@ function fillKeyword(keyword) {
                 class="sidebar-cart-item"
               >
                 <strong>{{ item.name }}</strong>
-                <small>数量：x{{ item.quantity }}，金额：{{ formatCurrency(mallApp.getCartItemPrice(item)) }}</small>
+                <small>
+                  数量 x{{ item.quantity }}，金额 {{ formatCurrency(mallApp.getCartItemPrice(item)) }}
+                </small>
               </article>
               <el-empty
                 v-if="!mallApp.cartItems.length"
@@ -357,11 +379,7 @@ function fillKeyword(keyword) {
                 :image-size="80"
               />
             </template>
-            <el-empty
-              v-else
-              description="登录后可保存购物车商品"
-              :image-size="80"
-            />
+            <el-empty v-else description="登录后可保存购物车商品" :image-size="80" />
           </div>
         </section>
       </aside>
@@ -372,6 +390,7 @@ function fillKeyword(keyword) {
       size="440px"
       title="商品详情"
       destroy-on-close
+      class="detail-panel"
     >
       <el-skeleton :rows="6" animated :loading="mallApp.productDetailLoading">
         <template v-if="mallApp.productDetail">
@@ -382,7 +401,9 @@ function fillKeyword(keyword) {
                 #{{ mallApp.productDetail.id }}
               </span>
               <h3>{{ mallApp.productDetail.name }}</h3>
-              <p>详情数据来自 <code>{{ productApiPath }}</code>，前端会按商品类型自动切换接口。</p>
+              <p>
+                详情数据来自 <code>{{ productApiPath }}</code>，前端会按商品类型自动切换接口。
+              </p>
             </div>
 
             <div class="detail-grid">
@@ -430,14 +451,16 @@ function fillKeyword(keyword) {
               </template>
             </div>
 
-            <div class="detail-hero">
-              <h3>{{ mallApp.productDetailType === "seckill" ? "当前活动状态" : "商品补充信息" }}</h3>
+            <div class="detail-hero detail-hero--soft">
+              <h3>{{ mallApp.productDetailType === "seckill" ? "活动状态" : "补充说明" }}</h3>
               <p v-if="mallApp.productDetailType === 'seckill'">
-                {{ getCountdownText(
-                  mallApp.productDetail.startTime,
-                  mallApp.productDetail.endTime,
-                  mallApp.currentTime
-                ) }}
+                {{
+                  getCountdownText(
+                    mallApp.productDetail.startTime,
+                    mallApp.productDetail.endTime,
+                    mallApp.currentTime
+                  )
+                }}
               </p>
               <template v-else>
                 <p>主图：{{ mallApp.productDetail.mainImage || "当前未配置" }}</p>
@@ -445,13 +468,10 @@ function fillKeyword(keyword) {
               </template>
             </div>
 
-            <div class="dialog-actions">
+            <div class="dialog-actions dialog-actions--panel">
               <template v-if="mallApp.productDetailType === 'normal'">
                 <el-button plain @click="handleBuyNowFromDetail">立即购买</el-button>
-                <el-button
-                  type="danger"
-                  @click="mallApp.addToCart(mallApp.productDetail, 'normal')"
-                >
+                <el-button type="danger" @click="mallApp.addToCart(mallApp.productDetail, 'normal')">
                   加入购物车
                 </el-button>
               </template>
@@ -479,6 +499,7 @@ function fillKeyword(keyword) {
       width="680px"
       title="订单详情"
       destroy-on-close
+      class="detail-panel"
     >
       <el-skeleton :rows="6" animated :loading="mallApp.orderDetailLoading">
         <template v-if="mallApp.selectedOrder">
@@ -511,7 +532,7 @@ function fillKeyword(keyword) {
             </div>
 
             <div v-if="mallApp.selectedOrder.orderType === 'normal'" class="detail-stack">
-              <div class="detail-hero">
+              <div class="detail-hero detail-hero--soft">
                 <h3>普通订单信息</h3>
                 <p>收货地址：{{ mallApp.getAddressSummary(mallApp.selectedOrder) }}</p>
                 <p>备注：{{ mallApp.selectedOrder.remark || "无" }}</p>
@@ -537,7 +558,7 @@ function fillKeyword(keyword) {
               </div>
             </div>
 
-            <div v-else class="detail-hero">
+            <div v-else class="detail-hero detail-hero--soft">
               <h3>秒杀订单信息</h3>
               <p>商品 ID：{{ mallApp.selectedOrder.productId }}</p>
               <p>秒杀价格：{{ formatCurrency(mallApp.selectedOrder.seckillPrice) }}</p>
@@ -586,9 +607,9 @@ function fillKeyword(keyword) {
       <template v-if="mallApp.pendingSeckillPayOrder">
         <div class="pay-confirm-body">
           <section class="pay-confirm-section">
-            <div class="section-head">
+            <div class="section-head section-head-wrap">
               <div>
-                <p class="eyebrow">支付项目</p>
+                <p class="eyebrow">Pay Items</p>
                 <h3>秒杀订单详情</h3>
               </div>
             </div>
@@ -598,7 +619,10 @@ function fillKeyword(keyword) {
 
               <div class="checkout-item-main">
                 <strong>秒杀商品 #{{ mallApp.pendingSeckillPayOrder.productId }}</strong>
-                <small>订单号 {{ mallApp.pendingSeckillPayOrder.orderNo || mallApp.pendingSeckillPayOrder.id }}</small>
+                <small>
+                  订单号
+                  {{ mallApp.pendingSeckillPayOrder.orderNo || mallApp.pendingSeckillPayOrder.id }}
+                </small>
                 <el-tag type="danger" effect="plain">待确认支付</el-tag>
               </div>
 
@@ -621,7 +645,12 @@ function fillKeyword(keyword) {
             <article class="preview-card">
               <div>
                 <small>状态说明</small>
-                <strong>{{ mallApp.getOrderStatusNote(mallApp.pendingSeckillPayOrder) || "当前订单待支付" }}</strong>
+                <strong>
+                  {{
+                    mallApp.getOrderStatusNote(mallApp.pendingSeckillPayOrder) ||
+                    "当前订单待支付"
+                  }}
+                </strong>
                 <span>你可以现在完成支付，也可以返回订单中心稍后继续处理。</span>
               </div>
             </article>
@@ -640,11 +669,7 @@ function fillKeyword(keyword) {
       <template #footer>
         <div class="dialog-actions-right pay-confirm-actions">
           <el-button size="large" @click="mallApp.holdPendingSeckillPayOrder()">稍后支付</el-button>
-          <el-button
-            type="danger"
-            size="large"
-            @click="mallApp.confirmSeckillPay()"
-          >
+          <el-button type="danger" size="large" @click="mallApp.confirmSeckillPay()">
             确认支付
           </el-button>
         </div>

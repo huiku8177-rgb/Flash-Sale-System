@@ -27,6 +27,14 @@ const router = createRouter({
       }
     },
     {
+      path: "/register",
+      name: "register",
+      component: LoginView,
+      meta: {
+        guestOnly: true
+      }
+    },
+    {
       path: "/checkout",
       name: "checkout",
       component: CheckoutView,
@@ -112,7 +120,10 @@ const router = createRouter({
 router.beforeEach((to) => {
   if (to.meta.requiresAuth && !authState.token) {
     return {
-      name: "login"
+      name: "login",
+      query: {
+        redirect: to.fullPath
+      }
     };
   }
 
