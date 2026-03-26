@@ -1,38 +1,25 @@
 spring:
   application:
     name: product-service
-  datasource:
-    url: jdbc:mysql://localhost:3306/flash_sale?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  config:
+    import:
+      - optional:nacos:flash-sale-common.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+      - optional:nacos:flash-sale-mysql.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+      - optional:nacos:${spring.application.name}.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
   cloud:
     nacos:
-      server-addr: 192.168.100.130:8848
+      server-addr: ${FLASH_SALE_NACOS_ADDR:192.168.100.130:8848}
       discovery:
-        namespace: cac2e129-5c78-402a-bdd1-b9dbb0892486
+        namespace: ${FLASH_SALE_NACOS_NAMESPACE:cac2e129-5c78-402a-bdd1-b9dbb0892486}
         register-enabled: true
       config:
-        enabled: false
-    openfeign:
-      client:
-        config:
-          default:
-            connectTimeout: 3000
-            readTimeout: 5000
-            loggerLevel: basic
-  main:
-    allow-bean-definition-overriding: true
+        enabled: ${FLASH_SALE_NACOS_CONFIG_ENABLED:true}
+        namespace: ${FLASH_SALE_NACOS_NAMESPACE:cac2e129-5c78-402a-bdd1-b9dbb0892486}
+        group: ${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+        file-extension: yaml
+        refresh-enabled: true
 
 server:
   port: 8084
-  forward-headers-strategy: framework
-
-mybatis:
-  mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: com.flashsale.productservice.domain.po,com.flashsale.productservice.domain.vo,com.flashsale.productservice.domain.dto
-  configuration:
-    map-underscore-to-camel-case: true
-
-springdoc:
-  api-docs:
-    path: /v3/api-docs

@@ -1,0 +1,10 @@
+server:
+  forward-headers-strategy: framework
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+
+logging:
+  level:
+    com.flashsale: info

@@ -1,0 +1,22 @@
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.flashsale.seckillservice.domain.po,com.flashsale.seckillservice.domain.vo,com.flashsale.seckillservice.domain.dto
+
+spring:
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+
+seckill:
+  preload:
+    enabled: false
+
+flash-sale:
+  seckill:
+    result-buffer-seconds: 600
+    default-result-ttl-seconds: 3600
+    mq:
+      exchange: seckill.exchange
+      routing-key: seckill.order

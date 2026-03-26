@@ -1,0 +1,98 @@
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/auth/**
+        - id: order-service
+          uri: lb://order-service
+          predicates:
+            - Path=/order/**
+        - id: seckill-service
+          uri: lb://seckill-service
+          predicates:
+            - Path=/seckill/**
+        - id: seckill-product-service
+          uri: lb://seckill-service
+          predicates:
+            - Path=/seckill-product/**
+        - id: product-service
+          uri: lb://product-service
+          predicates:
+            - Path=/product/**
+        - id: product-service-docs
+          uri: lb://product-service
+          predicates:
+            - Path=/v3/api-docs/product-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: auth-service-docs
+          uri: lb://auth-service
+          predicates:
+            - Path=/v3/api-docs/auth-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: seckill-service-docs
+          uri: lb://seckill-service
+          predicates:
+            - Path=/v3/api-docs/seckill-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: order-service-docs
+          uri: lb://order-service
+          predicates:
+            - Path=/v3/api-docs/order-service
+          filters:
+            - SetPath=/v3/api-docs
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    persist-authorization: true
+    try-it-out-enabled: true
+    display-request-duration: true
+    urls:
+      - name: Auth Service
+        url: /v3/api-docs/auth-service
+      - name: Product Service
+        url: /v3/api-docs/product-service
+      - name: Seckill Service
+        url: /v3/api-docs/seckill-service
+      - name: Order Service
+        url: /v3/api-docs/order-service
+
+flash-sale:
+  auth:
+    excludePaths:
+      - POST:/auth/login
+      - POST:/auth/register
+      - GET:/product/products
+      - GET:/product/products/**
+      - GET:/seckill-product/products
+      - GET:/seckill-product/products/**
+      - /swagger-ui.html
+      - /swagger-ui/**
+      - /v3/api-docs
+      - /v3/api-docs/**
+      - /error
+      - /favicon.ico
+  rate-limit:
+    enabled: true
+    rules:
+      - id: auth-login
+        method: POST
+        path: /auth/login
+        maxRequests: 10
+        windowSeconds: 60
+      - id: auth-register
+        method: POST
+        path: /auth/register
+        maxRequests: 5
+        windowSeconds: 300
+      - id: seckill-create
+        method: POST
+        path: /seckill/**
+        maxRequests: 20
+        windowSeconds: 60

@@ -1,0 +1,28 @@
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.flashsale.orderservice.domain.po,com.flashsale.orderservice.domain.vo
+
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 5000
+        readTimeout: 5000
+
+spring:
+  rabbitmq:
+    listener:
+      simple:
+        acknowledge-mode: manual
+
+flash-sale:
+  order:
+    tasks:
+      normal-timeout:
+        initial-delay-ms: 60000
+        fixed-delay-ms: 60000
+      seckill-timeout:
+        initial-delay-ms: 60000
+        fixed-delay-ms: 60000
+      seckill-result-compensation:
+        fixed-delay-ms: 30000

@@ -1,0 +1,6 @@
+flash-sale:
+  jwt:
+    location: classpath:flash-sale.jks
+    alias: flash-sale
+    tokenTTL: 30m
+    password: 123321

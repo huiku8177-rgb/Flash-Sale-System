@@ -1,31 +1,26 @@
-server:
-  port: 8083
-  forward-headers-strategy: framework
 spring:
   application:
     name: auth-service
-  datasource:
-    url: jdbc:mysql://localhost:3306/flash_sale?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai
-    username: root
-    password: 123456
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  config:
+    import:
+      - optional:nacos:flash-sale-common.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+      - optional:nacos:flash-sale-mysql.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+      - optional:nacos:flash-sale-jwt.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+      - optional:nacos:${spring.application.name}.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
   cloud:
     nacos:
-      server-addr: 192.168.100.130:8848
+      server-addr: ${FLASH_SALE_NACOS_ADDR:192.168.100.130:8848}
       discovery:
-        namespace: cac2e129-5c78-402a-bdd1-b9dbb0892486
-        # 服务注册延迟，确保 Nacos 客户端完全初始化
+        namespace: ${FLASH_SALE_NACOS_NAMESPACE:cac2e129-5c78-402a-bdd1-b9dbb0892486}
         register-enabled: true
       config:
-        enabled: false
+        enabled: ${FLASH_SALE_NACOS_CONFIG_ENABLED:true}
+        namespace: ${FLASH_SALE_NACOS_NAMESPACE:cac2e129-5c78-402a-bdd1-b9dbb0892486}
+        group: ${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+        file-extension: yaml
+        refresh-enabled: true
 
-mybatis:
-  mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: com.flashsale.authservice.domain.po,com.flashsale.authservice.domain.vo,com.flashsale.authservice.domain.dto
-  configuration:
-    map-underscore-to-camel-case: true
-flash-sale:
-  jwt:
-    location: classpath:flash-sale.jks
-    alias: flash-sale
-    password: 123321
-    tokenTTL: 30m
+server:
+  port: ${FLASH_SALE_AUTH_PORT:8083}

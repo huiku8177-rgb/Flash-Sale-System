@@ -1,39 +1,27 @@
 spring:
   application:
     name: order-service
-  datasource:
-    url: jdbc:mysql://localhost:3306/flash_sale?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
-  data:
-    redis:
-      host: 192.168.100.130
-      port: 6379
-      password: 123321
-  rabbitmq:
-    host: 192.168.100.130
-    port: 5672
-    username: guest
-    password: guest
-    listener:
-      simple:
-        acknowledge-mode: manual
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  config:
+    import:
+      - optional:nacos:flash-sale-common.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+      - optional:nacos:flash-sale-mysql.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+      - optional:nacos:flash-sale-redis.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+      - optional:nacos:flash-sale-rabbitmq.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+      - optional:nacos:${spring.application.name}.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
   cloud:
     nacos:
-      server-addr: 192.168.100.130:8848
+      server-addr: ${FLASH_SALE_NACOS_ADDR:192.168.100.130:8848}
       discovery:
-        namespace: cac2e129-5c78-402a-bdd1-b9dbb0892486
-        # 确保 Nacos 客户端完全初始化后再注册
+        namespace: ${FLASH_SALE_NACOS_NAMESPACE:cac2e129-5c78-402a-bdd1-b9dbb0892486}
         register-enabled: true
       config:
-        enabled: false
+        enabled: ${FLASH_SALE_NACOS_CONFIG_ENABLED:true}
+        namespace: ${FLASH_SALE_NACOS_NAMESPACE:cac2e129-5c78-402a-bdd1-b9dbb0892486}
+        group: ${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+        file-extension: yaml
+        refresh-enabled: true
 
 server:
   port: 8082
-  forward-headers-strategy: framework
-
-mybatis:
-  mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: com.flashsale.orderservice.domain.po,com.flashsale.orderservice.domain.vo
-  configuration:
-    map-underscore-to-camel-case: true
