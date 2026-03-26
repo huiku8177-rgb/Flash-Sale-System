@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,18 +21,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description OrderController
- * @date 2026/3/20 00:00
- */
 @Tag(name = "秒杀订单", description = "秒杀订单查询、支付与取消接口")
 @SecurityRequirement(name = "bearerAuth")
 @Validated
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/order")
+@Slf4j
 public class OrderController {
 
     private final SeckillOrderService seckillOrderService;
@@ -40,6 +36,7 @@ public class OrderController {
     @GetMapping("/seckill-orders")
     public Result<List<SeckillOrderVO>> listSeckillOrders(@Parameter(hidden = true)
                                                           @RequestHeader("X-User-Id") Long userId) {
+        log.info("list seckill orders request received, userId={}", userId);
         return seckillOrderService.listOrders(userId);
     }
 
@@ -49,6 +46,7 @@ public class OrderController {
                                                         @RequestHeader("X-User-Id") Long userId,
                                                         @Parameter(description = "秒杀订单ID", example = "50001")
                                                         @PathVariable("id") @Min(1) Long id) {
+        log.info("get seckill order detail request received, userId={}, orderId={}", userId, id);
         return seckillOrderService.getOrderDetail(userId, id);
     }
 
@@ -58,6 +56,7 @@ public class OrderController {
                                           @RequestHeader("X-User-Id") Long userId,
                                           @Parameter(description = "秒杀订单ID", example = "50001")
                                           @PathVariable("id") @Min(1) Long id) {
+        log.info("mock pay seckill order request received, userId={}, orderId={}", userId, id);
         return seckillOrderService.mockPay(userId, id);
     }
 
@@ -67,6 +66,7 @@ public class OrderController {
                                               @RequestHeader("X-User-Id") Long userId,
                                               @Parameter(description = "秒杀订单ID", example = "50001")
                                               @PathVariable("id") @Min(1) Long id) {
+        log.info("cancel seckill order request received, userId={}, orderId={}", userId, id);
         return seckillOrderService.cancelOrder(userId, id);
     }
 
@@ -76,6 +76,7 @@ public class OrderController {
                                                                @RequestHeader("X-User-Id") Long userId,
                                                                @Parameter(description = "秒杀订单ID", example = "50001")
                                                                @PathVariable("id") @Min(1) Long id) {
+        log.info("get seckill pay status request received, userId={}, orderId={}", userId, id);
         return seckillOrderService.getPayStatus(userId, id);
     }
 }

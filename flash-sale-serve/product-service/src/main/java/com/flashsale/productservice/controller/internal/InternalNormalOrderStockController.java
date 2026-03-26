@@ -16,12 +16,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description InternalNormalOrderStockController
- * @date 2026/3/23 00:00
- */
 @Hidden
 @Slf4j
 @Validated
@@ -34,13 +28,15 @@ public class InternalNormalOrderStockController {
 
     @PostMapping("/restore-stock")
     public Result<Void> restoreStock(@Valid @RequestBody InternalRestoreNormalOrderStockRequestDTO requestDTO) {
+        log.info("restore normal order stock request received, userId={}, orderNo={}",
+                requestDTO.getUserId(), requestDTO.getOrderNo());
         Map<Long, Integer> mergedItems = new LinkedHashMap<>();
         requestDTO.getItems().forEach(item ->
                 mergedItems.merge(item.getProductId(), item.getQuantity(), Integer::sum)
         );
 
         productOrderLocalTxService.restoreStock(mergedItems);
-        log.info("普通订单取消后恢复库存成功，userId={}, orderNo={}, productCount={}",
+        log.info("restore normal order stock completed, userId={}, orderNo={}, productCount={}",
                 requestDTO.getUserId(), requestDTO.getOrderNo(), mergedItems.size());
         return Result.success();
     }

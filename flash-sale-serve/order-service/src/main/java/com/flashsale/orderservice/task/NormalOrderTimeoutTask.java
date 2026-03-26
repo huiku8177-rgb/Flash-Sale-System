@@ -22,7 +22,10 @@ public class NormalOrderTimeoutTask {
     /**
      * 固定频率扫描超时待支付订单，复用正常取消订单逻辑做库存回补和状态流转。
      */
-    @Scheduled(initialDelay = 60000L, fixedDelay = 60000L)
+    @Scheduled(
+            initialDelayString = "${flash-sale.order.tasks.normal-timeout.initial-delay-ms:60000}",
+            fixedDelayString = "${flash-sale.order.tasks.normal-timeout.fixed-delay-ms:60000}"
+    )
     public void cancelExpiredUnpaidOrders() {
         int cancelled = normalOrderService.cancelTimeoutOrders();
         if (cancelled > 0) {

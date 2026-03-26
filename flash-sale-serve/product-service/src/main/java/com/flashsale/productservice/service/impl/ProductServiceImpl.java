@@ -125,7 +125,7 @@ public class ProductServiceImpl implements ProductService {
 
             BigDecimal itemAmount = cartItem.getPrice().multiply(BigDecimal.valueOf(cartItem.getQuantity()));
             totalAmount = totalAmount.add(itemAmount);
-            mergedItems.put(cartItem.getProductId(), cartItem.getQuantity());
+            mergedItems.merge(cartItem.getProductId(), cartItem.getQuantity(), Integer::sum);
 
             CreateNormalOrderItemDTO itemDTO = new CreateNormalOrderItemDTO();
             itemDTO.setProductId(cartItem.getProductId());

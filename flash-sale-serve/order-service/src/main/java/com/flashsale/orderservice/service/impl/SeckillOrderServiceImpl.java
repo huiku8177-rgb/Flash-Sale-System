@@ -3,6 +3,7 @@ package com.flashsale.orderservice.service.impl;
 import com.flashsale.common.domain.Result;
 import com.flashsale.common.domain.ResultCode;
 import com.flashsale.common.redis.RedisKeys;
+import com.flashsale.common.redis.SeckillResultState;
 import com.flashsale.orderservice.domain.po.SeckillOrderPO;
 import com.flashsale.orderservice.domain.vo.SeckillOrderPayStatusVO;
 import com.flashsale.orderservice.domain.vo.SeckillOrderVO;
@@ -214,7 +215,7 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
 
             stringRedisTemplate.opsForValue().set(orderKey, String.valueOf(order.getId()), ttlSeconds, TimeUnit.SECONDS);
             // 秒杀订单创建成功后立即进入“待支付”阶段，避免结果口径再落回“伪成功”。
-            stringRedisTemplate.opsForValue().set(resultKey, "PENDING_PAYMENT", ttlSeconds, TimeUnit.SECONDS);
+            stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.PENDING_PAYMENT, ttlSeconds, TimeUnit.SECONDS);
             log.info("创建秒杀订单成功，messageId={}, userId={}, productId={}, orderId={}",
                     message.getMessageId(), userId, productId, order.getId());
         } catch (DuplicateKeyException e) {
@@ -249,7 +250,7 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
 
         stringRedisTemplate.opsForSet().remove(userKey, String.valueOf(userId));
         stringRedisTemplate.opsForValue().increment(stockKey);
-        stringRedisTemplate.opsForValue().set(resultKey, "FAIL", ttlSeconds, TimeUnit.SECONDS);
+        stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.FAIL, ttlSeconds, TimeUnit.SECONDS);
         log.error("秒杀消息进入死信并完成补偿，请关注告警并排查原因，messageId={}, userId={}, productId={}",
                 message.getMessageId(), userId, productId);
     }
@@ -320,7 +321,7 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
 
         try {
             stringRedisTemplate.delete(orderKey);
-            stringRedisTemplate.opsForValue().set(resultKey, "FAIL", DEFAULT_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
+            stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.FAIL, DEFAULT_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
             stringRedisTemplate.opsForValue().increment(stockKey);
         } catch (Exception ex) {
             log.warn("同步秒杀订单取消后的 Redis 状态失败，userId={}, productId={}", userId, productId, ex);
@@ -343,19 +344,19 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
         }
         if (isCreated(order.getStatus())) {
             stringRedisTemplate.opsForValue().set(orderKey, String.valueOf(order.getId()), ttlSeconds, TimeUnit.SECONDS);
-            stringRedisTemplate.opsForValue().set(resultKey, "PENDING_PAYMENT", ttlSeconds, TimeUnit.SECONDS);
+            stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.PENDING_PAYMENT, ttlSeconds, TimeUnit.SECONDS);
             return;
         }
         stringRedisTemplate.delete(orderKey);
         if (isPaid(order.getStatus())) {
-            stringRedisTemplate.opsForValue().set(resultKey, "ALREADY_PAID", ttlSeconds, TimeUnit.SECONDS);
+            stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.ALREADY_PAID, ttlSeconds, TimeUnit.SECONDS);
             return;
         }
         if (isCancelled(order.getStatus())) {
-            stringRedisTemplate.opsForValue().set(resultKey, "CANCELLED", ttlSeconds, TimeUnit.SECONDS);
+            stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.CANCELLED, ttlSeconds, TimeUnit.SECONDS);
             return;
         }
-        stringRedisTemplate.opsForValue().set(resultKey, "FAIL", ttlSeconds, TimeUnit.SECONDS);
+        stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.FAIL, ttlSeconds, TimeUnit.SECONDS);
     }
 
     private boolean isCreated(Integer status) {

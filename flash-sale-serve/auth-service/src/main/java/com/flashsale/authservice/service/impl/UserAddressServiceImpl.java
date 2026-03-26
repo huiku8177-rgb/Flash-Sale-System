@@ -6,8 +6,9 @@ import com.flashsale.authservice.domain.po.UserAddressPO;
 import com.flashsale.authservice.domain.vo.UserAddressVO;
 import com.flashsale.authservice.mapper.UserAddressMapper;
 import com.flashsale.authservice.service.UserAddressService;
-import com.flashsale.common.domain.Result;
 import com.flashsale.common.domain.ResultCode;
+import com.flashsale.common.exception.CommonException;
+import com.flashsale.common.exception.UnauthorizedException;
 import com.flashsale.common.util.AddressUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,51 +34,38 @@ public class UserAddressServiceImpl implements UserAddressService {
     private final UserAddressMapper userAddressMapper;
 
     @Override
-    public Result<List<UserAddressVO>> listAddresses(Long userId) {
-        if (userId == null) {
-            return Result.error(ResultCode.UNAUTHORIZED);
-        }
-        return Result.success(userAddressMapper.listByUserId(userId));
+    public List<UserAddressVO> listAddresses(Long userId) {
+        requireAuthenticated(userId);
+        return userAddressMapper.listByUserId(userId);
     }
 
     @Override
-    public Result<UserAddressVO> getAddressDetail(Long userId, Long id) {
-        if (userId == null) {
-            return Result.error(ResultCode.UNAUTHORIZED);
-        }
-        if (id == null) {
-            return Result.error(ResultCode.PARAM_ERROR, "地址ID不能为空");
-        }
+    public UserAddressVO getAddressDetail(Long userId, Long id) {
+        requireAuthenticated(userId);
+        requireAddressId(id);
 
         UserAddressVO address = userAddressMapper.getDetailByIdAndUserId(id, userId);
         if (address == null) {
-            return Result.error(ResultCode.BUSINESS_ERROR, "收货地址不存在");
+            throw businessError("收货地址不存在");
         }
-        return Result.success(address);
+        return address;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Result<UserAddressVO> createAddress(Long userId, UserAddressCreateDTO requestDTO) {
-        if (userId == null) {
-            return Result.error(ResultCode.UNAUTHORIZED);
-        }
+    public UserAddressVO createAddress(Long userId, UserAddressCreateDTO requestDTO) {
+        requireAuthenticated(userId);
         if (requestDTO == null) {
-            return Result.error(ResultCode.PARAM_ERROR, "请求参数不能为空");
+            throw paramError("请求参数不能为空");
         }
 
-        UserAddressPO address = new UserAddressPO();
-        address.setUserId(userId);
         String receiver = AddressUtils.trimToNull(requestDTO.getReceiver());
         String mobile = AddressUtils.trimToNull(requestDTO.getMobile());
         String detail = AddressUtils.trimToNull(requestDTO.getDetail());
-        if (!AddressUtils.hasRequiredFields(receiver, mobile, detail)) {
-            return Result.error(ResultCode.PARAM_ERROR, "收货人、手机号和收货地址不能为空");
-        }
-        if (!AddressUtils.isMobileValid(mobile)) {
-            return Result.error(ResultCode.PARAM_ERROR, "手机号格式不正确");
-        }
+        validateAddressFields(receiver, mobile, detail);
 
+        UserAddressPO address = new UserAddressPO();
+        address.setUserId(userId);
         address.setReceiver(receiver);
         address.setMobile(mobile);
         address.setDetail(detail);
@@ -89,37 +77,28 @@ public class UserAddressServiceImpl implements UserAddressService {
         address.setIsDefault(shouldSetDefault ? DEFAULT_TRUE : DEFAULT_FALSE);
 
         userAddressMapper.insert(address);
-        log.info("新增收货地址成功，userId={}, addressId={}", userId, address.getId());
-        return Result.success(loadAddressVO(userId, address.getId()));
+        log.info("新增收货地址成功: userId={}, addressId={}", userId, address.getId());
+        return loadAddressVO(userId, address.getId());
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Result<UserAddressVO> updateAddress(Long userId, Long id, UserAddressUpdateDTO requestDTO) {
-        if (userId == null) {
-            return Result.error(ResultCode.UNAUTHORIZED);
-        }
-        if (id == null) {
-            return Result.error(ResultCode.PARAM_ERROR, "地址ID不能为空");
-        }
+    public UserAddressVO updateAddress(Long userId, Long id, UserAddressUpdateDTO requestDTO) {
+        requireAuthenticated(userId);
+        requireAddressId(id);
         if (requestDTO == null) {
-            return Result.error(ResultCode.PARAM_ERROR, "请求参数不能为空");
+            throw paramError("请求参数不能为空");
         }
 
         UserAddressPO existing = userAddressMapper.findByIdAndUserId(id, userId);
         if (existing == null) {
-            return Result.error(ResultCode.BUSINESS_ERROR, "收货地址不存在");
+            throw businessError("收货地址不存在");
         }
 
         String receiver = AddressUtils.trimToNull(requestDTO.getReceiver());
         String mobile = AddressUtils.trimToNull(requestDTO.getMobile());
         String detail = AddressUtils.trimToNull(requestDTO.getDetail());
-        if (!AddressUtils.hasRequiredFields(receiver, mobile, detail)) {
-            return Result.error(ResultCode.PARAM_ERROR, "收货人、手机号和收货地址不能为空");
-        }
-        if (!AddressUtils.isMobileValid(mobile)) {
-            return Result.error(ResultCode.PARAM_ERROR, "手机号格式不正确");
-        }
+        validateAddressFields(receiver, mobile, detail);
 
         existing.setReceiver(receiver);
         existing.setMobile(mobile);
@@ -133,23 +112,19 @@ public class UserAddressServiceImpl implements UserAddressService {
         }
 
         userAddressMapper.update(existing);
-        log.info("修改收货地址成功，userId={}, addressId={}", userId, id);
-        return Result.success(loadAddressVO(userId, id));
+        log.info("修改收货地址成功: userId={}, addressId={}", userId, id);
+        return loadAddressVO(userId, id);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Result<Void> deleteAddress(Long userId, Long id) {
-        if (userId == null) {
-            return Result.error(ResultCode.UNAUTHORIZED);
-        }
-        if (id == null) {
-            return Result.error(ResultCode.PARAM_ERROR, "地址ID不能为空");
-        }
+    public void deleteAddress(Long userId, Long id) {
+        requireAuthenticated(userId);
+        requireAddressId(id);
 
         UserAddressPO existing = userAddressMapper.findByIdAndUserId(id, userId);
         if (existing == null) {
-            return Result.error(ResultCode.BUSINESS_ERROR, "收货地址不存在");
+            throw businessError("收货地址不存在");
         }
 
         userAddressMapper.markDeleted(id, userId);
@@ -171,30 +146,25 @@ public class UserAddressServiceImpl implements UserAddressService {
             }
         }
 
-        log.info("删除收货地址成功，userId={}, addressId={}", userId, id);
-        return Result.success();
+        log.info("删除收货地址成功: userId={}, addressId={}", userId, id);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Result<UserAddressVO> setDefaultAddress(Long userId, Long id) {
-        if (userId == null) {
-            return Result.error(ResultCode.UNAUTHORIZED);
-        }
-        if (id == null) {
-            return Result.error(ResultCode.PARAM_ERROR, "地址ID不能为空");
-        }
+    public UserAddressVO setDefaultAddress(Long userId, Long id) {
+        requireAuthenticated(userId);
+        requireAddressId(id);
 
         UserAddressPO existing = userAddressMapper.findByIdAndUserId(id, userId);
         if (existing == null) {
-            return Result.error(ResultCode.BUSINESS_ERROR, "收货地址不存在");
+            throw businessError("收货地址不存在");
         }
 
         userAddressMapper.clearDefaultByUserId(userId);
         existing.setIsDefault(DEFAULT_TRUE);
         userAddressMapper.update(existing);
-        log.info("设置默认地址成功，userId={}, addressId={}", userId, id);
-        return Result.success(loadAddressVO(userId, id));
+        log.info("设置默认收货地址成功: userId={}, addressId={}", userId, id);
+        return loadAddressVO(userId, id);
     }
 
     private boolean shouldSetDefaultOnCreate(Long userId, Boolean isDefault) {
@@ -212,4 +182,32 @@ public class UserAddressServiceImpl implements UserAddressService {
         return address;
     }
 
+    private void validateAddressFields(String receiver, String mobile, String detail) {
+        if (!AddressUtils.hasRequiredFields(receiver, mobile, detail)) {
+            throw paramError("收货人、手机号和收货地址不能为空");
+        }
+        if (!AddressUtils.isMobileValid(mobile)) {
+            throw paramError("手机号格式不正确");
+        }
+    }
+
+    private void requireAuthenticated(Long userId) {
+        if (userId == null) {
+            throw new UnauthorizedException("未登录或登录已失效");
+        }
+    }
+
+    private void requireAddressId(Long id) {
+        if (id == null) {
+            throw paramError("地址ID不能为空");
+        }
+    }
+
+    private CommonException paramError(String message) {
+        return new CommonException(message, ResultCode.PARAM_ERROR.getCode());
+    }
+
+    private CommonException businessError(String message) {
+        return new CommonException(message, ResultCode.BUSINESS_ERROR.getCode());
+    }
 }

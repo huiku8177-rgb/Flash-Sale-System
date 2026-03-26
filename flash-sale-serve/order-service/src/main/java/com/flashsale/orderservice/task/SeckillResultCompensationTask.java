@@ -1,6 +1,7 @@
 package com.flashsale.orderservice.task;
 
 import com.flashsale.common.redis.RedisKeys;
+import com.flashsale.common.redis.SeckillResultState;
 import com.flashsale.orderservice.domain.po.SeckillOrderPO;
 import com.flashsale.orderservice.mapper.SeckillOrderMapper;
 import lombok.RequiredArgsConstructor;
@@ -39,14 +40,14 @@ public class SeckillResultCompensationTask {
      * 1) DB已有订单 -> 修正为 SUCCESS；
      * 2) DB无订单 -> 回滚Redis用户标记/库存并置 FAIL。
      */
-    @Scheduled(fixedDelay = 30000)
+    @Scheduled(fixedDelayString = "${flash-sale.order.tasks.seckill-result-compensation.fixed-delay-ms:30000}")
     public void compensateTimeoutProcessingResult() {
         ScanOptions options = ScanOptions.scanOptions().match(RedisKeys.PREFIX_SECKILL_RESULT + "*").count(200).build();
         try (Cursor<byte[]> cursor = stringRedisTemplate.getConnectionFactory().getConnection().scan(options)) {
             while (cursor.hasNext()) {
                 String resultKey = new String(cursor.next(), StandardCharsets.UTF_8);
                 String state = stringRedisTemplate.opsForValue().get(resultKey);
-                if (!"PROCESSING".equals(state)) {
+                if (!SeckillResultState.PROCESSING.equals(state)) {
                     continue;
                 }
 
@@ -71,7 +72,7 @@ public class SeckillResultCompensationTask {
                             RESULT_FAIL_TTL_SECONDS,
                             TimeUnit.SECONDS
                     );
-                    stringRedisTemplate.opsForValue().set(resultKey, "SUCCESS", RESULT_FAIL_TTL_SECONDS, TimeUnit.SECONDS);
+                    stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.SUCCESS, RESULT_FAIL_TTL_SECONDS, TimeUnit.SECONDS);
                     continue;
                 }
 
@@ -82,7 +83,7 @@ public class SeckillResultCompensationTask {
                     stringRedisTemplate.opsForValue().increment(RedisKeys.seckillStock(productId));
                 }
 
-                stringRedisTemplate.opsForValue().set(resultKey, "FAIL", RESULT_FAIL_TTL_SECONDS, TimeUnit.SECONDS);
+                stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.FAIL, RESULT_FAIL_TTL_SECONDS, TimeUnit.SECONDS);
                 log.warn("排队超时补偿完成 userId={}, productId={}, resultKey={}", userId, productId, resultKey);
             }
         } catch (Exception e) {

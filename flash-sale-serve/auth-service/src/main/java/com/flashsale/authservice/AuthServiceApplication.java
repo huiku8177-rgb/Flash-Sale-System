@@ -1,9 +1,8 @@
 package com.flashsale.authservice;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.stereotype.Component;
 /**
  * @author strive_qin
  * @version 1.0
@@ -13,10 +12,12 @@ import org.springframework.stereotype.Component;
 
 
 @SpringBootApplication
+@Slf4j
 public class AuthServiceApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(AuthServiceApplication.class, args);
+        log.info("auth-service application started");
     }
 
 }

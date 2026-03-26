@@ -6,12 +6,10 @@ import com.flashsale.authservice.domain.dto.UpdatePasswordRequestDTO;
 import com.flashsale.authservice.domain.vo.UserVO;
 import com.flashsale.authservice.service.UserService;
 import com.flashsale.common.domain.Result;
-import com.flashsale.common.domain.ResultCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -26,13 +24,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-/**
- * @author strive_qin
- * @version 1.0
- * @description UserController
- * @date 2026/3/20 00:00
- */
-
 
 @Tag(name = "认证管理", description = "登录、注册与账户相关接口")
 @Validated
@@ -44,12 +35,6 @@ public class UserController {
 
     private final UserService userService;
 
-    /**
-     * 用户登录
-     *
-     * @param requestDTO 登录参数
-     * @return 登录结果
-     */
     @Operation(summary = "登录", description = "使用用户名和密码登录，成功后返回 JWT 令牌。")
     @ApiResponses({
             @ApiResponse(
@@ -83,69 +68,45 @@ public class UserController {
     })
     @PostMapping("/login")
     public Result<UserVO> login(@Valid @RequestBody LoginRequestDTO requestDTO) {
-        return userService.login(requestDTO);
+        log.info("login request received, username={}", requestDTO.getUsername());
+        UserVO userVO = userService.login(requestDTO);
+        log.info("login succeeded, userId={}, username={}", userVO.getUserId(), userVO.getUsername());
+        return Result.success(userVO);
     }
 
-    /**
-     * 用户注册
-     *
-     * @param requestDTO 注册参数
-     * @return 注册结果
-     */
     @Operation(summary = "注册")
     @PostMapping("/register")
     public Result<Void> register(@Valid @RequestBody RegisterRequestDTO requestDTO) {
-        log.info("注册用户：{}", requestDTO.getUsername());
-        return userService.register(requestDTO);
+        log.info("register request received, username={}", requestDTO.getUsername());
+        userService.register(requestDTO);
+        log.info("register succeeded, username={}", requestDTO.getUsername());
+        return Result.success();
     }
 
-    /**
-     * 退出登录
-     *
-     * @return 退出结果
-     */
     @Operation(summary = "退出登录")
     @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/logout")
     public Result<String> logout() {
+        log.info("logout request received");
         return Result.success("退出登录成功");
     }
 
-    /**
-     * 获取当前登录用户信息
-     *
-     * @param userId 用户ID
-     * @return 用户信息
-     */
-    @Operation(summary = "获取当前用户信息")
+    @Operation(summary = "获取当前登录用户信息")
     @SecurityRequirement(name = "bearerAuth")
     @GetMapping("/me")
     public Result<UserVO> meByGet(@Parameter(hidden = true) @RequestHeader("X-User-Id") Long userId) {
-        return getCurrentUser(userId);
+        log.info("load current user profile, userId={}", userId);
+        return Result.success(userService.getUserInfo(userId));
     }
 
-    /**
-     * 修改当前用户密码
-     *
-     * @param userId 用户ID
-     * @param requestDTO 修改密码参数
-     * @return 修改结果
-     */
     @Operation(summary = "修改密码")
     @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/updatePassword")
     public Result<Void> updatePassword(@Parameter(hidden = true) @RequestHeader("X-User-Id") Long userId,
                                        @Valid @RequestBody UpdatePasswordRequestDTO requestDTO) {
-        return userService.updatePassword(userId, requestDTO);
-    }
-
-    // 统一封装获取当前用户的返回逻辑
-    private Result<UserVO> getCurrentUser(Long userId) {
-        log.info("获取当前用户信息：{}", userId);
-        UserVO userVO = userService.getUserInfo(userId);
-        if (userVO == null) {
-            return Result.error(ResultCode.BUSINESS_ERROR, "用户不存在");
-        }
-        return Result.success(userVO);
+        log.info("update password request received, userId={}", userId);
+        userService.updatePassword(userId, requestDTO);
+        log.info("update password succeeded, userId={}", userId);
+        return Result.success();
     }
 }

@@ -62,6 +62,8 @@ public class SeckillOrderConsumer {
     public void consumeSeckillOrder(SeckillMessage message, Channel channel, Message amqpMessage) throws IOException {
         String messageId = message.getMessageId();
         long deliveryTag = amqpMessage.getMessageProperties().getDeliveryTag();
+        log.info("seckill order message received, messageId={}, userId={}, productId={}",
+                messageId, message.getUserId(), message.getProductId());
 
         if (messageId == null || messageId.isBlank()) {
             // messageId 缺失时无法幂等，拒绝并让 broker 按队列策略进入死信。
@@ -85,6 +87,7 @@ public class SeckillOrderConsumer {
             orderService.createSeckillOrder(message);
             stringRedisTemplate.opsForValue().set(idempotentKey, "DONE", IDEMPOTENT_DONE_TTL_SECONDS, TimeUnit.SECONDS);
             channel.basicAck(deliveryTag, false);
+            log.info("seckill order message consumed successfully, messageId={}", messageId);
         } catch (Exception e) {
             // 删除锁后抛异常，交由重试拦截器；超过最大次数后转入 DLQ。
             stringRedisTemplate.delete(idempotentKey);
@@ -101,6 +104,8 @@ public class SeckillOrderConsumer {
         log.error("接收到秒杀死信消息 messageId={}, userId={}, productId={}",
                 message.getMessageId(), message.getUserId(), message.getProductId());
         orderService.handleSeckillFailure(message);
+        log.warn("dead letter compensation finished, messageId={}, userId={}, productId={}",
+                message.getMessageId(), message.getUserId(), message.getProductId());
         if (message.getMessageId() != null && !message.getMessageId().isBlank()) {
             stringRedisTemplate.opsForValue().set(
                     RedisKeys.mqConsume(message.getMessageId()),

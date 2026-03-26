@@ -1,5 +1,6 @@
 package com.flashsale.seckillservice;
 
+import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -13,10 +14,12 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
 @MapperScan("com.flashsale.seckillservice.mapper")
+@Slf4j
 public class SeckillServiceApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(SeckillServiceApplication.class, args);
+        log.info("seckill-service application started");
     }
 
 }

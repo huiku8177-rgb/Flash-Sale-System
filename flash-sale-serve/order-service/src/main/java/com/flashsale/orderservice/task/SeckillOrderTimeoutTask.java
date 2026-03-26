@@ -22,7 +22,10 @@ public class SeckillOrderTimeoutTask {
     /**
      * 秒杀订单与普通订单统一采用“15 分钟未支付自动关闭”的策略。
      */
-    @Scheduled(initialDelay = 60000L, fixedDelay = 60000L)
+    @Scheduled(
+            initialDelayString = "${flash-sale.order.tasks.seckill-timeout.initial-delay-ms:60000}",
+            fixedDelayString = "${flash-sale.order.tasks.seckill-timeout.fixed-delay-ms:60000}"
+    )
     public void cancelExpiredUnpaidSeckillOrders() {
         int cancelled = seckillOrderService.cancelTimeoutOrders();
         if (cancelled > 0) {

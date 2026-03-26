@@ -31,7 +31,7 @@ const profileMenuItems = [
   { label: "修改密码", routeName: "app-account-security" }
 ];
 
-const hotKeywords = ["耳机", "键盘", "零食", "显示器", "饮料"];
+const hotKeywords = ["iPhone", "华为", "格力", "oppo", "vivo"];
 
 const isAuthenticated = computed(() => Boolean(mallApp.authState.token));
 

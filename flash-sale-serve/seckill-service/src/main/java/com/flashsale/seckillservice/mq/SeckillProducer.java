@@ -1,8 +1,11 @@
 package com.flashsale.seckillservice.mq;
 
+import com.flashsale.common.web.RequestHeaderNames;
+import com.flashsale.seckillservice.config.SeckillBusinessProperties;
 import com.flashsale.seckillservice.mq.message.SeckillMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -20,7 +23,11 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @Slf4j
 public class SeckillProducer {
+
+    private static final String REQUEST_ID_HEADER = RequestHeaderNames.X_REQUEST_ID;
+
     private final RabbitTemplate rabbitTemplate;
+    private final SeckillBusinessProperties seckillBusinessProperties;
 
     // 注册消息投递确认与退回回调
     @jakarta.annotation.PostConstruct
@@ -44,14 +51,20 @@ public class SeckillProducer {
     public void sendSeckillMessage(SeckillMessage seckillMessage) {
         CorrelationData correlationData = new CorrelationData(seckillMessage.getMessageId());
         rabbitTemplate.convertAndSend(
-                "seckill.exchange",
-                "seckill.order",
+                seckillBusinessProperties.getMq().getExchange(),
+                seckillBusinessProperties.getMq().getRoutingKey(),
                 seckillMessage,
                 (Message message) -> {
                     message.getMessageProperties().setMessageId(seckillMessage.getMessageId());
+                    String requestId = MDC.get("requestId");
+                    if (requestId != null && !requestId.isBlank()) {
+                        message.getMessageProperties().setHeader(REQUEST_ID_HEADER, requestId);
+                    }
                     return message;
                 },
                 correlationData
         );
+        log.info("seckill message published, messageId={}, userId={}, productId={}",
+                seckillMessage.getMessageId(), seckillMessage.getUserId(), seckillMessage.getProductId());
     }
 }

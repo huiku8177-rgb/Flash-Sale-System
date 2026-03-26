@@ -2,6 +2,8 @@ package com.flashsale.seckillservice.service.impl;
 
 import com.flashsale.common.domain.Result;
 import com.flashsale.common.redis.RedisKeys;
+import com.flashsale.common.redis.SeckillResultState;
+import com.flashsale.seckillservice.config.SeckillBusinessProperties;
 import com.flashsale.seckillservice.domain.dto.SeckillRequestDTO;
 import com.flashsale.seckillservice.domain.po.SeckillOrderPO;
 import com.flashsale.seckillservice.domain.po.SeckillProductPO;
@@ -35,8 +37,6 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class SeckillServiceImpl implements SeckillService {
 
-    private static final long RESULT_BUFFER_SECONDS = 600L;
-    private static final long DEFAULT_RESULT_TTL_SECONDS = 3600L;
     private static final int STATUS_CREATED = 0;
     private static final int STATUS_PAID = 1;
     private static final int STATUS_CANCELLED = 2;
@@ -47,6 +47,7 @@ public class SeckillServiceImpl implements SeckillService {
     private final DefaultRedisScript<Long> seckillScript;
     private final DefaultRedisScript<Long> seckillRollbackScript;
     private final SeckillProducer seckillProducer;
+    private final SeckillBusinessProperties seckillBusinessProperties;
 
     public SeckillServiceImpl(
             SeckillProductMapper seckillProductMapper,
@@ -54,13 +55,15 @@ public class SeckillServiceImpl implements SeckillService {
             StringRedisTemplate stringRedisTemplate,
             @Qualifier("seckillScript") DefaultRedisScript<Long> seckillScript,
             @Qualifier("seckillRollbackScript") DefaultRedisScript<Long> seckillRollbackScript,
-            SeckillProducer seckillProducer) {
+            SeckillProducer seckillProducer,
+            SeckillBusinessProperties seckillBusinessProperties) {
         this.seckillProductMapper = seckillProductMapper;
         this.seckillMapper = seckillMapper;
         this.stringRedisTemplate = stringRedisTemplate;
         this.seckillScript = seckillScript;
         this.seckillRollbackScript = seckillRollbackScript;
         this.seckillProducer = seckillProducer;
+        this.seckillBusinessProperties = seckillBusinessProperties;
     }
 
     /**
@@ -68,6 +71,13 @@ public class SeckillServiceImpl implements SeckillService {
      */
     @Override
     public Result<SeckillResultVO> seckill(SeckillRequestDTO requestDTO) {
+        if (requestDTO == null) {
+            SeckillResultVO result = new SeckillResultVO();
+            result.setSuccess(false);
+            result.setMessage("请求参数错误");
+            return Result.success(result);
+        }
+
         Long productId = requestDTO.getProductId();
         Long userId = requestDTO.getUserId();
         SeckillResultVO result = new SeckillResultVO();
@@ -130,7 +140,7 @@ public class SeckillServiceImpl implements SeckillService {
 
         long ttlSeconds = calculateResultTtlSeconds(product.getEndTime(), now);
         String resultKey = RedisKeys.seckillResult(userId, productId);
-        stringRedisTemplate.opsForValue().set(resultKey, "PROCESSING", ttlSeconds, TimeUnit.SECONDS);
+        stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.PROCESSING, ttlSeconds, TimeUnit.SECONDS);
         stringRedisTemplate.expire(userKey, ttlSeconds, TimeUnit.SECONDS);
 
         SeckillMessage message = new SeckillMessage();
@@ -149,7 +159,12 @@ public class SeckillServiceImpl implements SeckillService {
                     Arrays.asList(stockKey, userKey),
                     String.valueOf(userId)
             );
-            stringRedisTemplate.opsForValue().set(resultKey, "FAIL", DEFAULT_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
+            stringRedisTemplate.opsForValue().set(
+                    resultKey,
+                    SeckillResultState.FAIL,
+                    seckillBusinessProperties.getDefaultResultTtlSeconds(),
+                    TimeUnit.SECONDS
+            );
             log.error("发送秒杀 MQ 失败，已回滚 Redis 库存与用户标记，messageId={}", message.getMessageId(), ex);
             result.setSuccess(false);
             result.setMessage("系统繁忙，请稍后重试");
@@ -189,27 +204,27 @@ public class SeckillServiceImpl implements SeckillService {
 
         String resultKey = RedisKeys.seckillResult(userId, productId);
         String status = stringRedisTemplate.opsForValue().get(resultKey);
-        if ("PROCESSING".equals(status)) {
+        if (SeckillResultState.PROCESSING.equals(status)) {
             result.setStatus(0);
             result.setMessage("排队中");
             return Result.success(result);
         }
-        if ("FAIL".equals(status)) {
+        if (SeckillResultState.FAIL.equals(status)) {
             result.setStatus(-1);
             result.setMessage("秒杀失败");
             return Result.success(result);
         }
-        if ("ALREADY_PAID".equals(status)) {
+        if (SeckillResultState.ALREADY_PAID.equals(status)) {
             result.setStatus(-1);
             result.setMessage("你已成功购买过该秒杀商品，请勿重复抢购");
             return Result.success(result);
         }
-        if ("CANCELLED".equals(status)) {
+        if (SeckillResultState.CANCELLED.equals(status)) {
             result.setStatus(-1);
             result.setMessage("该秒杀订单已取消，当前不能重复抢购");
             return Result.success(result);
         }
-        if ("PENDING_PAYMENT".equals(status)) {
+        if (SeckillResultState.PENDING_PAYMENT.equals(status)) {
             SeckillOrderPO order = seckillMapper.getOrderByUserIdAndProductId(userId, productId);
             if (order != null) {
                 return buildOrderResult(result, order);
@@ -246,13 +261,13 @@ public class SeckillServiceImpl implements SeckillService {
             stringRedisTemplate.opsForValue().set(
                     orderKey,
                     String.valueOf(order.getId()),
-                    DEFAULT_RESULT_TTL_SECONDS,
+                    seckillBusinessProperties.getDefaultResultTtlSeconds(),
                     TimeUnit.SECONDS
             );
             stringRedisTemplate.opsForValue().set(
                     resultKey,
-                    "PENDING_PAYMENT",
-                    DEFAULT_RESULT_TTL_SECONDS,
+                    SeckillResultState.PENDING_PAYMENT,
+                    seckillBusinessProperties.getDefaultResultTtlSeconds(),
                     TimeUnit.SECONDS
             );
             return;
@@ -262,8 +277,8 @@ public class SeckillServiceImpl implements SeckillService {
         if (isPaid(order.getStatus())) {
             stringRedisTemplate.opsForValue().set(
                     resultKey,
-                    "ALREADY_PAID",
-                    DEFAULT_RESULT_TTL_SECONDS,
+                    SeckillResultState.ALREADY_PAID,
+                    seckillBusinessProperties.getDefaultResultTtlSeconds(),
                     TimeUnit.SECONDS
             );
             return;
@@ -271,16 +286,16 @@ public class SeckillServiceImpl implements SeckillService {
         if (isCancelled(order.getStatus())) {
             stringRedisTemplate.opsForValue().set(
                     resultKey,
-                    "CANCELLED",
-                    DEFAULT_RESULT_TTL_SECONDS,
+                    SeckillResultState.CANCELLED,
+                    seckillBusinessProperties.getDefaultResultTtlSeconds(),
                     TimeUnit.SECONDS
             );
             return;
         }
         stringRedisTemplate.opsForValue().set(
                 resultKey,
-                "FAIL",
-                DEFAULT_RESULT_TTL_SECONDS,
+                SeckillResultState.FAIL,
+                seckillBusinessProperties.getDefaultResultTtlSeconds(),
                 TimeUnit.SECONDS
         );
     }
@@ -317,14 +332,14 @@ public class SeckillServiceImpl implements SeckillService {
 
     private long calculateResultTtlSeconds(LocalDateTime endTime, LocalDateTime now) {
         if (endTime == null) {
-            return DEFAULT_RESULT_TTL_SECONDS;
+            return seckillBusinessProperties.getDefaultResultTtlSeconds();
         }
-        LocalDateTime expireTime = endTime.plusSeconds(RESULT_BUFFER_SECONDS);
+        LocalDateTime expireTime = endTime.plusSeconds(seckillBusinessProperties.getResultBufferSeconds());
         long ttl = Duration.between(
                 now.atZone(ZoneId.systemDefault()).toInstant(),
                 expireTime.atZone(ZoneId.systemDefault()).toInstant()
         ).getSeconds();
-        return Math.max(ttl, DEFAULT_RESULT_TTL_SECONDS);
+        return Math.max(ttl, seckillBusinessProperties.getDefaultResultTtlSeconds());
     }
 
     private boolean isCreated(Integer status) {

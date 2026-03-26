@@ -22,12 +22,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description NormalOrderController
- * @date 2026/3/20 00:00
- */
 @Tag(name = "普通订单", description = "普通商品结算与下单接口")
 @SecurityRequirement(name = "bearerAuth")
 @Validated
@@ -39,13 +33,6 @@ public class NormalOrderController {
 
     private final ProductService productService;
 
-    /**
-     * 基于当前用户已勾选的购物车商品创建普通订单。
-     *
-     * @param userId 用户ID
-     * @param checkoutDTO 下单信息
-     * @return 订单信息
-     */
     @Operation(summary = "创建普通订单", description = "基于当前用户已勾选的购物车商品和已保存地址创建普通订单。")
     @ApiResponses({
             @ApiResponse(
@@ -55,7 +42,7 @@ public class NormalOrderController {
                             mediaType = "application/json",
                             examples = @ExampleObject(
                                     name = "createNormalOrderSuccess",
-                                    value = "{\"code\":200,\"message\":\"成功\",\"data\":{\"id\":30001,\"orderNo\":\"202603200001\",\"userId\":10001,\"orderStatus\":0,\"totalAmount\":199.00,\"payAmount\":199.00,\"payTime\":null,\"remark\":\"请尽快发货\",\"receiver\":\"小曾\",\"mobile\":\"13800000000\",\"detail\":\"深圳市南山区科技园\",\"createTime\":\"2026-03-20T17:30:00\",\"items\":[{\"id\":31001,\"orderId\":30001,\"userId\":10001,\"productId\":1001,\"productName\":\"旗舰手机\",\"productSubtitle\":\"12GB+256GB\",\"productImage\":\"https://cdn.example.com/product/1001.png\",\"salePrice\":99.50,\"quantity\":2,\"itemAmount\":199.00,\"createTime\":\"2026-03-20T17:30:00\"}]},\"timestamp\":\"2026-03-20T17:30:00\"}"
+                                    value = "{\"code\":200,\"message\":\"成功\",\"data\":{\"id\":30001,\"orderNo\":\"202603200001\"},\"timestamp\":\"2026-03-20T17:30:00\"}"
                             )
                     )
             ),
@@ -65,7 +52,11 @@ public class NormalOrderController {
     @PostMapping("/normal-orders")
     public Result<NormalOrderVO> createOrder(@Parameter(hidden = true) @RequestHeader("X-User-Id") Long userId,
                                              @Valid @RequestBody NormalOrderCheckoutDTO checkoutDTO) {
-        log.info("用户 {} 通过商品服务基于已选购物车商品创建普通订单", userId);
-        return productService.createNormalOrder(userId, checkoutDTO);
+        log.info("create normal order request received, userId={}", userId);
+        Result<NormalOrderVO> result = productService.createNormalOrder(userId, checkoutDTO);
+        if (result != null && result.getData() != null) {
+            log.info("create normal order completed, userId={}, orderNo={}", userId, result.getData().getOrderNo());
+        }
+        return result;
     }
 }
