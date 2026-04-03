@@ -1,0 +1,8 @@
+- [x] RagChatServiceImpl正确注入EmbeddingClient和ChatModelClient依赖
+- [x] chat方法能够接收用户question并返回ChatResponseVO
+- [x] 调用EmbeddingClient对question生成embedding向量
+- [x] 构造基础prompt（不包含知识库内容）
+- [x] 调用ChatModelClient获取AI回答
+- [x] ChatResponseVO包含answer字段和sources占位信息
+- [x] retrieveKnowledge方法预留扩展点，返回空列表
+- [x] 代码中包含清晰的注释说明后续扩展点

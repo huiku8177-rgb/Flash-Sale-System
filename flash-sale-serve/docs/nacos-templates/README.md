@@ -14,4 +14,13 @@ Recommended import order in each service:
 - shared infra config such as MySQL / Redis / RabbitMQ / JWT
 - service specific config such as `gateway.yaml`
 
+Available service templates:
+
+- `auth-service.yaml`
+- `product-service.yaml`
+- `seckill-service.yaml`
+- `order-service.yaml`
+- `gateway.yaml`
+- `ai-service.yaml`
+
 You can paste each file into the Nacos console as-is and then adjust the values for your environment.

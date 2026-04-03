@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: ai-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  config:
+    import:
+      - optional:nacos:flash-sale-common.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+      - optional:nacos:${spring.application.name}.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+  cloud:
+    nacos:
+      server-addr: ${FLASH_SALE_NACOS_ADDR:192.168.100.130:8848}
+      discovery:
+        namespace: ${FLASH_SALE_NACOS_NAMESPACE:cac2e129-5c78-402a-bdd1-b9dbb0892486}
+        enabled: ${FLASH_SALE_NACOS_DISCOVERY_ENABLED:false}
+        register-enabled: ${FLASH_SALE_NACOS_DISCOVERY_ENABLED:false}
+      config:
+        enabled: ${FLASH_SALE_NACOS_CONFIG_ENABLED:false}
+        namespace: ${FLASH_SALE_NACOS_NAMESPACE:cac2e129-5c78-402a-bdd1-b9dbb0892486}
+        group: ${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+        file-extension: yaml
+        refresh-enabled: true
+
+server:
+  port: ${FLASH_SALE_AI_PORT:8085}
+
+ai:
+  base-url: ${FLASH_SALE_AI_BASE_URL:}
+  api-key: ${FLASH_SALE_AI_API_KEY:}
+  embedding-model: ${FLASH_SALE_AI_EMBEDDING_MODEL:text-embedding-v1}
+  chat-model: ${FLASH_SALE_AI_CHAT_MODEL:qwen-turbo}
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html

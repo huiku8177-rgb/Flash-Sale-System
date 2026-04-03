@@ -1,0 +1,12 @@
+springdoc:
+  api-docs:
+    enabled: true
+
+ai:
+  base-url: https://dashscope.aliyuncs.com/compatible-mode/
+  embedding-model: text-embedding-v2
+  chat-model: qvq-max-2025-03-25
+
+# Do not put the API key in Nacos or git-tracked files.
+# Provide it through the runtime environment variable:
+# FLASH_SALE_AI_API_KEY=your-secret-key
