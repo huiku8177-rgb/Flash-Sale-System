@@ -13,6 +13,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -33,39 +34,52 @@ public class EmbeddingClient {
         if (!StringUtils.hasText(text)) {
             throw new IllegalArgumentException("text must not be blank");
         }
-        if (!StringUtils.hasText(aiProperties.getEmbeddingModel())) {
-            throw new ModelInvokeException("embedding model is not configured");
+        if (!aiProperties.isEmbeddingClientConfigured()) {
+            return localEmbedding(text);
         }
 
-        log.debug("Requesting embedding, model={}, textLength={}", aiProperties.getEmbeddingModel(), text.length());
-
-        EmbeddingResponse response;
         try {
-            response = aiWebClient.post()
+            EmbeddingResponse response = aiWebClient.post()
                     .uri("/v1/embeddings")
                     .bodyValue(new EmbeddingRequest(aiProperties.getEmbeddingModel(), text))
                     .retrieve()
                     .bodyToMono(EmbeddingResponse.class)
                     .block(TIMEOUT);
+            if (response == null || response.getData() == null || response.getData().isEmpty()) {
+                throw new ModelInvokeException("Embedding API returned empty response");
+            }
+            List<Double> embedding = response.getData().get(0).getEmbedding();
+            if (embedding == null || embedding.isEmpty()) {
+                throw new ModelInvokeException("Embedding vector is empty");
+            }
+            return embedding;
         } catch (WebClientResponseException e) {
             log.error("Embedding API error, status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new ModelInvokeException(
-                    "Embedding API HTTP " + e.getStatusCode() + ": " + e.getResponseBodyAsString(), e);
+            throw new ModelInvokeException("Embedding API HTTP " + e.getStatusCode(), e);
         } catch (Exception e) {
             throw new ModelInvokeException("Failed to call embedding API: " + e.getMessage(), e);
         }
+    }
 
-        if (response == null || response.getData() == null || response.getData().isEmpty()) {
-            throw new ModelInvokeException("Embedding API returned empty response");
+    private List<Double> localEmbedding(String text) {
+        double[] values = new double[16];
+        char[] chars = text.toCharArray();
+        for (int i = 0; i < chars.length; i++) {
+            values[i % values.length] += chars[i];
         }
-
-        List<Double> embedding = response.getData().get(0).getEmbedding();
-        if (embedding == null || embedding.isEmpty()) {
-            throw new ModelInvokeException("Embedding vector is empty");
+        List<Double> vector = new ArrayList<>(values.length);
+        double norm = 0d;
+        for (double value : values) {
+            norm += value * value;
         }
-
-        log.debug("Embedding succeeded, dimensions={}", embedding.size());
-        return embedding;
+        norm = Math.sqrt(norm);
+        if (norm == 0d) {
+            norm = 1d;
+        }
+        for (double value : values) {
+            vector.add(value / norm);
+        }
+        return vector;
     }
 
     @Data

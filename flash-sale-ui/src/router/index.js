@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import AppShellView from "../views/AppShellView.vue";
 import AccountInfoView from "../views/AccountInfoView.vue";
+import AiAssistantView from "../views/AiAssistantView.vue";
 import CartView from "../views/CartView.vue";
 import CheckoutView from "../views/CheckoutView.vue";
 import FlashSaleView from "../views/FlashSaleView.vue";
@@ -76,6 +77,14 @@ const router = createRouter({
           path: "cart",
           name: "app-cart",
           component: CartView,
+          meta: {
+            requiresAuth: true
+          }
+        },
+        {
+          path: "assistant",
+          name: "app-assistant",
+          component: AiAssistantView,
           meta: {
             requiresAuth: true
           }

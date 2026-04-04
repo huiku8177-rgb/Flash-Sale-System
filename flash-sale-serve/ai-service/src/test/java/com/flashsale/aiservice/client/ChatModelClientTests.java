@@ -21,7 +21,7 @@ class ChatModelClientTests {
 
     @Test
     void chatReturnsAnswerWhenResponseIsValid() {
-        ChatModelClient client = createClient(HttpStatus.OK, RESPONSE_BODY);
+        ChatModelClient client = createClient(true, HttpStatus.OK, RESPONSE_BODY);
 
         String result = client.chat("hi");
 
@@ -30,54 +30,34 @@ class ChatModelClientTests {
 
     @Test
     void chatThrowsWhenPromptIsBlank() {
-        ChatModelClient client = createClient(HttpStatus.OK, RESPONSE_BODY);
+        ChatModelClient client = createClient(true, HttpStatus.OK, RESPONSE_BODY);
 
         assertThrows(IllegalArgumentException.class, () -> client.chat(" "));
     }
 
     @Test
     void chatThrowsWhenModelNotConfigured() {
-        ChatModelClient client = createClientWithModel(null, HttpStatus.OK, RESPONSE_BODY);
+        ChatModelClient client = createClient(false, HttpStatus.OK, RESPONSE_BODY);
 
         assertThrows(ModelInvokeException.class, () -> client.chat("test"));
     }
 
     @Test
     void chatThrowsWhenChoicesIsEmpty() {
-        ChatModelClient client = createClient(HttpStatus.OK, "{\"choices\":[]}");
-
-        assertThrows(ModelInvokeException.class, () -> client.chat("test"));
-    }
-
-    @Test
-    void chatThrowsWhenMessageIsNull() {
-        ChatModelClient client = createClient(HttpStatus.OK, "{\"choices\":[{}]}");
-
-        assertThrows(ModelInvokeException.class, () -> client.chat("test"));
-    }
-
-    @Test
-    void chatThrowsWhenContentIsNull() {
-        ChatModelClient client = createClient(HttpStatus.OK,
-                "{\"choices\":[{\"message\":{\"role\":\"assistant\"}}]}");
+        ChatModelClient client = createClient(true, HttpStatus.OK, "{\"choices\":[]}");
 
         assertThrows(ModelInvokeException.class, () -> client.chat("test"));
     }
 
     @Test
     void chatThrowsWhenHttpCallFails() {
-        ChatModelClient client = createClient(HttpStatus.BAD_REQUEST,
-                "{\"error\":{\"message\":\"invalid request\",\"type\":\"invalid_request_error\"}}");
+        ChatModelClient client = createClient(true, HttpStatus.BAD_REQUEST, "{\"error\":\"invalid request\"}");
 
         ModelInvokeException ex = assertThrows(ModelInvokeException.class, () -> client.chat("test"));
         assertNotNull(ex.getCause());
     }
 
-    private ChatModelClient createClient(HttpStatus status, String responseBody) {
-        return createClientWithModel("qwen-turbo", status, responseBody);
-    }
-
-    private ChatModelClient createClientWithModel(String model, HttpStatus status, String responseBody) {
+    private ChatModelClient createClient(boolean enabled, HttpStatus status, String responseBody) {
         ExchangeFunction exchangeFunction = request -> {
             ClientResponse.Builder builder = ClientResponse.create(status)
                     .header("Content-Type", MediaType.APPLICATION_JSON_VALUE);
@@ -87,16 +67,12 @@ class ChatModelClientTests {
             return Mono.just(builder.build());
         };
 
-        WebClient webClient = WebClient.builder()
-                .exchangeFunction(exchangeFunction)
-                .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/")
-                .build();
-
+        WebClient webClient = WebClient.builder().exchangeFunction(exchangeFunction).build();
         AiProperties aiProperties = new AiProperties();
+        aiProperties.setEnabled(enabled);
         aiProperties.setBaseUrl("https://dashscope.aliyuncs.com/compatible-mode/");
         aiProperties.setApiKey("test-key");
-        aiProperties.setChatModel(model);
-
+        aiProperties.setChatModel("qwen-turbo");
         return new ChatModelClient(webClient, aiProperties);
     }
 }

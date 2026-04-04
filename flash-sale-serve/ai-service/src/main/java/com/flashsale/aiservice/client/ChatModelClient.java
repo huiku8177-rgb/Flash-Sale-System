@@ -33,42 +33,34 @@ public class ChatModelClient {
         if (!StringUtils.hasText(prompt)) {
             throw new IllegalArgumentException("prompt must not be blank");
         }
-        if (!StringUtils.hasText(aiProperties.getChatModel())) {
+        if (!aiProperties.isChatClientConfigured()) {
             throw new ModelInvokeException("chat model is not configured");
         }
 
-        log.debug("Requesting chat, model={}, promptLength={}", aiProperties.getChatModel(), prompt.length());
-
-        ChatResponse response;
         try {
-            response = aiWebClient.post()
+            ChatResponse response = aiWebClient.post()
                     .uri("/v1/chat/completions")
-                    .bodyValue(new ChatRequest(
-                            aiProperties.getChatModel(),
-                            List.of(new Message("user", prompt))))
+                    .bodyValue(new ChatRequest(aiProperties.getChatModel(), List.of(new Message("user", prompt))))
                     .retrieve()
                     .bodyToMono(ChatResponse.class)
                     .block(TIMEOUT);
+            if (response == null || response.getChoices() == null || response.getChoices().isEmpty()) {
+                throw new ModelInvokeException("Chat API returned empty choices");
+            }
+            Message message = response.getChoices().get(0).getMessage();
+            if (message == null || !StringUtils.hasText(message.getContent())) {
+                throw new ModelInvokeException("Chat API returned empty message content");
+            }
+            return message.getContent();
         } catch (WebClientResponseException e) {
             log.error("Chat API error, status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new ModelInvokeException(
-                    "Chat API HTTP " + e.getStatusCode() + ": " + e.getResponseBodyAsString(), e);
+            throw new ModelInvokeException("Chat API HTTP " + e.getStatusCode(), e);
         } catch (Exception e) {
+            if (e instanceof ModelInvokeException modelInvokeException) {
+                throw modelInvokeException;
+            }
             throw new ModelInvokeException("Failed to call chat API: " + e.getMessage(), e);
         }
-
-        if (response == null || response.getChoices() == null || response.getChoices().isEmpty()) {
-            throw new ModelInvokeException("Chat API returned empty choices");
-        }
-
-        Message message = response.getChoices().get(0).getMessage();
-        if (message == null || !StringUtils.hasText(message.getContent())) {
-            throw new ModelInvokeException("Chat API returned empty message content");
-        }
-
-        String answer = message.getContent();
-        log.debug("Chat succeeded, answerLength={}", answer.length());
-        return answer;
     }
 
     @Data

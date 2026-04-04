@@ -15,6 +15,11 @@ Thumbs.db
 
 .idea/
 .vscode/
+.trae/
+.cursor/
+.windsurf/
+.kilo/
+.history/
 *.iml
 
 # ======================

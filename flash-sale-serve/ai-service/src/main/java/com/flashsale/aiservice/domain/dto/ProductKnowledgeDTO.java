@@ -1,5 +1,6 @@
 package com.flashsale.aiservice.domain.dto;
 
+import com.flashsale.aiservice.domain.enums.KnowledgeSourceType;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -9,45 +10,43 @@ import java.time.LocalDateTime;
 public class ProductKnowledgeDTO {
 
     private Long id;
-
     private String name;
-
     private String subtitle;
-
     private Long categoryId;
-
     private BigDecimal price;
-
     private BigDecimal marketPrice;
-
     private Integer stock;
-
     private Integer status;
-
     private String mainImage;
-
     private String detail;
-
     private LocalDateTime createTime;
-
     private LocalDateTime updateTime;
 
+    public KnowledgeSourceType getKnowledgeSourceType() {
+        return KnowledgeSourceType.PRODUCT;
+    }
+
     public String toKnowledgeText() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("商品名称：").append(name).append("\n");
+        StringBuilder builder = new StringBuilder();
+        builder.append("\u5546\u54c1\u540d\u79f0: ").append(name).append("\n");
         if (subtitle != null && !subtitle.isEmpty()) {
-            sb.append("商品副标题：").append(subtitle).append("\n");
+            builder.append("\u5546\u54c1\u526f\u6807\u9898: ").append(subtitle).append("\n");
         }
-        sb.append("价格：").append(price).append("元\n");
+        if (price != null) {
+            builder.append("\u552e\u4ef7: ").append(price).append(" \u5143\n");
+        }
         if (marketPrice != null) {
-            sb.append("市场价：").append(marketPrice).append("元\n");
+            builder.append("\u5212\u7ebf\u4ef7: ").append(marketPrice).append(" \u5143\n");
         }
         if (stock != null) {
-            sb.append("库存：").append(stock).append("件\n");
+            builder.append("\u5e93\u5b58: ").append(stock).append("\n");
+        }
+        if (status != null) {
+            builder.append("\u72b6\u6001: ").append(status == 1 ? "\u4e0a\u67b6\u4e2d" : "\u5df2\u4e0b\u67b6").append("\n");
         }
         if (detail != null && !detail.isEmpty()) {
-            sb.append("商品详情：").append(detail).append("\n");
+            builder.append("\u5546\u54c1\u8be6\u60c5: ").append(detail).append("\n");
         }
-        return sb.toString();
+        return builder.toString();
     }
 }

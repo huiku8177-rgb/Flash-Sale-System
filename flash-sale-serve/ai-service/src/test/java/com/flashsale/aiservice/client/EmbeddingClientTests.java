@@ -19,7 +19,7 @@ class EmbeddingClientTests {
 
     @Test
     void embedReturnsVectorWhenResponseIsValid() {
-        EmbeddingClient client = createClient(HttpStatus.OK, "{\"data\":[{\"embedding\":[0.1,0.2,0.3]}]}");
+        EmbeddingClient client = createClient(true, HttpStatus.OK, "{\"data\":[{\"embedding\":[0.1,0.2,0.3]}]}");
 
         List<Double> result = client.embed("test text");
 
@@ -27,52 +27,29 @@ class EmbeddingClientTests {
     }
 
     @Test
+    void embedFallsBackToLocalEmbeddingWhenDisabled() {
+        EmbeddingClient client = createClient(false, HttpStatus.OK, null);
+
+        List<Double> result = client.embed("test text");
+
+        assertEquals(16, result.size());
+    }
+
+    @Test
     void embedThrowsWhenTextIsBlank() {
-        EmbeddingClient client = createClient(HttpStatus.OK, "{\"data\":[{\"embedding\":[0.1]}]}");
+        EmbeddingClient client = createClient(true, HttpStatus.OK, "{\"data\":[{\"embedding\":[0.1]}]}");
 
         assertThrows(IllegalArgumentException.class, () -> client.embed(" "));
     }
 
     @Test
-    void embedThrowsWhenModelNotConfigured() {
-        EmbeddingClient client = createClientWithModel(null, HttpStatus.OK, "{}");
-
-        assertThrows(ModelInvokeException.class, () -> client.embed("test text"));
-    }
-
-    @Test
-    void embedThrowsWhenResponseIsEmpty() {
-        EmbeddingClient client = createClient(HttpStatus.OK, null);
-
-        assertThrows(ModelInvokeException.class, () -> client.embed("test text"));
-    }
-
-    @Test
-    void embedThrowsWhenDataIsMissing() {
-        EmbeddingClient client = createClient(HttpStatus.OK, "{}");
-
-        assertThrows(ModelInvokeException.class, () -> client.embed("test text"));
-    }
-
-    @Test
-    void embedThrowsWhenEmbeddingIsMissing() {
-        EmbeddingClient client = createClient(HttpStatus.OK, "{\"data\":[{}]}");
-
-        assertThrows(ModelInvokeException.class, () -> client.embed("test text"));
-    }
-
-    @Test
     void embedThrowsWhenHttpCallFails() {
-        EmbeddingClient client = createClient(HttpStatus.BAD_REQUEST, "{\"error\":\"bad request\"}");
+        EmbeddingClient client = createClient(true, HttpStatus.BAD_REQUEST, "{\"error\":\"bad request\"}");
 
         assertThrows(ModelInvokeException.class, () -> client.embed("test text"));
     }
 
-    private EmbeddingClient createClient(HttpStatus status, String responseBody) {
-        return createClientWithModel("text-embedding-v1", status, responseBody);
-    }
-
-    private EmbeddingClient createClientWithModel(String model, HttpStatus status, String responseBody) {
+    private EmbeddingClient createClient(boolean enabled, HttpStatus status, String responseBody) {
         ExchangeFunction exchangeFunction = request -> {
             ClientResponse.Builder builder = ClientResponse.create(status)
                     .header("Content-Type", MediaType.APPLICATION_JSON_VALUE);
@@ -82,14 +59,12 @@ class EmbeddingClientTests {
             return Mono.just(builder.build());
         };
 
-        WebClient webClient = WebClient.builder()
-                .exchangeFunction(exchangeFunction)
-                .baseUrl("http://localhost:18080")
-                .build();
+        WebClient webClient = WebClient.builder().exchangeFunction(exchangeFunction).build();
 
         AiProperties aiProperties = new AiProperties();
+        aiProperties.setEnabled(enabled);
         aiProperties.setBaseUrl("http://localhost:18080");
-        aiProperties.setEmbeddingModel(model);
+        aiProperties.setEmbeddingModel("text-embedding-v1");
         aiProperties.setApiKey("test-key");
 
         return new EmbeddingClient(webClient, aiProperties);

@@ -804,7 +804,7 @@ code {
 
 .desktop-shortcuts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -834,6 +834,12 @@ code {
 
 .shortcut-green {
   background: linear-gradient(135deg, rgba(26, 168, 111, 0.08), #fff);
+}
+
+.shortcut-ink {
+  background:
+    radial-gradient(circle at top right, rgba(47, 125, 246, 0.12), transparent 26%),
+    linear-gradient(135deg, rgba(17, 24, 39, 0.04), #fff);
 }
 
 .section-card {

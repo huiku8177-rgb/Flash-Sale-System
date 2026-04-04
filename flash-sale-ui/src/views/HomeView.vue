@@ -76,6 +76,10 @@ function goFlash() {
   router.push({ name: "app-flash" });
 }
 
+function goAssistant() {
+  router.push({ name: "app-assistant" });
+}
+
 async function buyNow(product) {
   const ready = await mallApp.prepareImmediateCheckout(product);
   if (ready) {
@@ -213,6 +217,14 @@ onBeforeUnmount(() => {
             <small>
               普通订单和秒杀订单都支持先创建待支付订单，再在订单中心继续完成支付。
             </small>
+          </article>
+          <article class="shortcut-card shortcut-ink">
+            <span>AI 商品助手</span>
+            <strong>可靠问答</strong>
+            <small>
+              在独立工作区内咨询商品、秒杀、配送和售后问题，回答会优先基于检索证据和实时信息。
+            </small>
+            <el-button plain @click="goAssistant">进入 AI 助手</el-button>
           </article>
         </section>
       </div>

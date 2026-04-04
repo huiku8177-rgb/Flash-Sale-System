@@ -18,8 +18,11 @@ public class WebClientConfig {
 
     @Bean
     public WebClient aiWebClient(WebClient.Builder builder, AiProperties aiProperties) {
-        WebClient.Builder webClientBuilder = builder.clone()
-                .baseUrl(aiProperties.getBaseUrl());
+        WebClient.Builder webClientBuilder = builder.clone();
+
+        if (StringUtils.hasText(aiProperties.getBaseUrl())) {
+            webClientBuilder.baseUrl(aiProperties.getBaseUrl());
+        }
 
         if (StringUtils.hasText(aiProperties.getApiKey())) {
             webClientBuilder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + aiProperties.getApiKey());

@@ -17,6 +17,9 @@ function createClient(baseURL) {
     if (authState.token) {
       config.headers.Authorization = `Bearer ${authState.token}`;
     }
+    if (authState.userId) {
+      config.headers["X-User-Id"] = authState.userId;
+    }
     return config;
   });
 

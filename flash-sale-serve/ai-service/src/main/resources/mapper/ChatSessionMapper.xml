@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.flashsale.aiservice.mapper.ChatSessionMapper">
+
+    <resultMap id="ChatSessionResultMap" type="com.flashsale.aiservice.domain.po.ChatSessionPO">
+        <id property="id" column="id"/>
+        <result property="sessionId" column="session_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="productId" column="product_id"/>
+        <result property="contextType" column="context_type"/>
+        <result property="sessionStatus" column="session_status"/>
+        <result property="messageCount" column="message_count"/>
+        <result property="lastQuestion" column="last_question"/>
+        <result property="lastAnswerSummary" column="last_answer_summary"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="lastActiveAt" column="last_active_at"/>
+        <result property="expireAt" column="expire_at"/>
+    </resultMap>
+
+    <sql id="BaseColumns">
+        id,
+        session_id,
+        user_id,
+        product_id,
+        context_type,
+        session_status,
+        message_count,
+        last_question,
+        last_answer_summary,
+        created_at,
+        last_active_at,
+        expire_at
+    </sql>
+
+    <insert id="insert" parameterType="com.flashsale.aiservice.domain.po.ChatSessionPO" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO chat_session (
+            session_id,
+            user_id,
+            product_id,
+            context_type,
+            session_status,
+            message_count,
+            last_question,
+            last_answer_summary,
+            created_at,
+            last_active_at,
+            expire_at
+        ) VALUES (
+            #{sessionId},
+            #{userId},
+            #{productId},
+            #{contextType},
+            #{sessionStatus},
+            #{messageCount},
+            #{lastQuestion},
+            #{lastAnswerSummary},
+            #{createdAt},
+            #{lastActiveAt},
+            #{expireAt}
+        )
+    </insert>
+
+    <select id="getBySessionId" resultMap="ChatSessionResultMap">
+        SELECT
+        <include refid="BaseColumns"/>
+        FROM chat_session
+        WHERE session_id = #{sessionId}
+    </select>
+
+    <update id="updateActivity" parameterType="com.flashsale.aiservice.domain.po.ChatSessionPO">
+        UPDATE chat_session
+        SET user_id = #{userId},
+            product_id = #{productId},
+            context_type = #{contextType},
+            message_count = #{messageCount},
+            last_question = #{lastQuestion},
+            last_answer_summary = #{lastAnswerSummary},
+            last_active_at = #{lastActiveAt},
+            expire_at = #{expireAt}
+        WHERE session_id = #{sessionId}
+    </update>
+
+    <select id="countSessions" resultType="long">
+        SELECT COUNT(1) FROM chat_session
+    </select>
+
+    <delete id="deleteExpired">
+        DELETE FROM chat_session
+        WHERE expire_at &lt; #{deadline}
+    </delete>
+</mapper>

@@ -36,6 +36,9 @@ const hotKeywords = ["iPhone", "华为", "格力", "oppo", "vivo"];
 const isAuthenticated = computed(() => Boolean(mallApp.authState.token));
 
 const currentTitle = computed(() => {
+  if (route.name === "app-assistant") {
+    return "AI 商品助手";
+  }
   const mapping = {
     "app-home": "首页推荐",
     "app-flash": "秒杀会场",
@@ -112,6 +115,20 @@ async function handleBuyNowFromDetail() {
   if (ready) {
     router.push({ name: "checkout" });
   }
+}
+
+function openAssistantForDetail() {
+  if (!mallApp.productDetail?.id) {
+    return;
+  }
+  router.push({
+    name: "app-assistant",
+    query: {
+      productId: String(mallApp.productDetail.id),
+      productName: mallApp.productDetail.name || "",
+      contextType: "product-detail"
+    }
+  });
 }
 
 function jumpNav(routeName) {
@@ -268,6 +285,15 @@ function getSidebarOrderNumber(order) {
           </div>
 
           <div class="site-nav-actions">
+            <button
+              v-if="isAuthenticated"
+              type="button"
+              class="site-nav-item"
+              :class="{ active: route.name === 'app-assistant' }"
+              @click="jumpNav('app-assistant')"
+            >
+              AI 助手
+            </button>
             <template v-if="isAuthenticated">
               <el-dropdown trigger="hover" @command="handleProfileCommand">
                 <button
@@ -470,12 +496,14 @@ function getSidebarOrderNumber(order) {
 
             <div class="dialog-actions dialog-actions--panel">
               <template v-if="mallApp.productDetailType === 'normal'">
+                <el-button plain @click="openAssistantForDetail">问 AI</el-button>
                 <el-button plain @click="handleBuyNowFromDetail">立即购买</el-button>
                 <el-button type="danger" @click="mallApp.addToCart(mallApp.productDetail, 'normal')">
                   加入购物车
                 </el-button>
               </template>
               <template v-else>
+                <el-button plain @click="openAssistantForDetail">问 AI</el-button>
                 <el-button @click="mallApp.addToCart(mallApp.productDetail, 'seckill')">
                   加入草稿
                 </el-button>
