@@ -17,6 +17,16 @@ public class ChatRequestDTO {
     @Schema(description = "关联商品 ID，商品详情页接入时建议传入", example = "1001")
     private Long productId;
 
+    // Dual-track context hydration: accept productName from the caller when already known.
+    @Size(max = 128)
+    @Schema(description = "关联商品名称，已知时建议同步传入", example = "iPhone 15")
+    private String productName;
+
+    // Dual-track context hydration: accept productType but keep server-side auto repair for old callers.
+    @Size(max = 32)
+    @Schema(description = "关联商品类型，例如 normal / seckill", example = "normal")
+    private String productType;
+
     @Size(max = 64)
     @Schema(description = "会话 ID，用于串联多轮上下文", example = "session-001")
     private String sessionId;

@@ -15,6 +15,8 @@ public interface ChatRecordService {
 
     ChatSessionVO getSessionDetail(ChatSessionPO session, int limit);
 
+    void deleteBySessionId(String sessionId);
+
     long countRecords();
 
     int deleteExpired(LocalDateTime deadline);

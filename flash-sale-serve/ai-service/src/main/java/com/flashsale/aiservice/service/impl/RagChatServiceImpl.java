@@ -1,27 +1,28 @@
-package com.flashsale.aiservice.service.impl;
 
-import com.flashsale.aiservice.client.ChatModelClient;
-import com.flashsale.aiservice.client.EmbeddingClient;
+  package com.flashsale.aiservice.service.impl;
+
 import com.flashsale.aiservice.client.ProductKnowledgeClient;
 import com.flashsale.aiservice.client.SeckillKnowledgeClient;
 import com.flashsale.aiservice.config.AiProperties;
 import com.flashsale.aiservice.domain.dto.ChatRequestDTO;
 import com.flashsale.aiservice.domain.dto.ProductKnowledgeDTO;
 import com.flashsale.aiservice.domain.dto.SeckillKnowledgeDTO;
-import com.flashsale.aiservice.domain.enums.AnswerPolicy;
+import com.flashsale.aiservice.domain.enums.OutOfScopeTopicType;
 import com.flashsale.aiservice.domain.enums.QuestionCategory;
+import com.flashsale.aiservice.domain.enums.QuestionIntentType;
 import com.flashsale.aiservice.domain.po.ChatRecordPO;
 import com.flashsale.aiservice.domain.po.ChatSessionPO;
 import com.flashsale.aiservice.domain.vo.ChatResponseVO;
+import com.flashsale.aiservice.domain.vo.ChatSessionSummaryVO;
 import com.flashsale.aiservice.domain.vo.ChatSessionVO;
-import com.flashsale.aiservice.domain.vo.RelatedKnowledgeVO;
-import com.flashsale.aiservice.exception.ModelInvokeException;
+import com.flashsale.aiservice.domain.vo.ConversationContextState;
 import com.flashsale.aiservice.service.ChatAuditService;
 import com.flashsale.aiservice.service.ChatRecordService;
 import com.flashsale.aiservice.service.ChatSessionService;
-import com.flashsale.aiservice.service.KnowledgeRetrievalService;
-import com.flashsale.aiservice.service.PromptBuilderService;
 import com.flashsale.aiservice.service.RagChatService;
+import com.flashsale.aiservice.service.route.ChatRouteRequest;
+import com.flashsale.aiservice.service.route.ChatRouteResult;
+import com.flashsale.aiservice.service.route.ChatRouteStrategy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,577 +32,895 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
+/**
+ * RAG 对话服务实现类
+ *
+ * 负责处理用户对话请求的完整流程，包括：
+ * - 会话管理（创建、查询、删除）
+ * - 意图识别与问题改写
+ * - 上下文状态维护（当前商品、对比候选等）
+ * - 路由策略分发与执行
+ * - 对话记录持久化与审计
+ *
+ * 该类是 RAG 对话系统的核心入口，协调各个子服务完成智能问答。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class RagChatServiceImpl implements RagChatService {
 
-    private static final String FALLBACK_ASSISTANT_INTRO = "ASSISTANT_INTRO";
-    private static final String FALLBACK_GREETING = "GREETING";
-    private static final String FALLBACK_OUT_OF_SCOPE = "OUT_OF_SCOPE";
-    private static final String FALLBACK_NO_RELEVANT_KNOWLEDGE = "NO_RELEVANT_KNOWLEDGE";
-    private static final String FALLBACK_MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE";
+  // 商品类型常量
+  private static final String PRODUCT_TYPE_NORMAL = "normal";
+  private static final String PRODUCT_TYPE_SECKILL = "seckill";
 
-    private static final String QUESTION_WEATHER = "\u5929\u6c14";
-    private static final String QUESTION_STOCK = "\u80a1\u7968";
-    private static final String QUESTION_CODE = "\u4ee3\u7801";
-    private static final String QUESTION_PRESIDENT = "\u603b\u7edf";
+  // 越界话题关键词 - 天气
+  private static final String QUESTION_WEATHER = "天气";
+  // 越界话题关键词 - 金融投资
+  private static final String QUESTION_STOCK = "股票";
+  private static final String QUESTION_FUND = "基金";
+  private static final String QUESTION_FINANCIAL = "理财";
+  private static final String QUESTION_MARKET = "大盘";
+  // 越界话题关键词 - 技术编程
+  private static final String QUESTION_CODE = "代码";
+  private static final String QUESTION_PROGRAM = "编程";
+  private static final String QUESTION_BUG = "bug";
+  // 越界话题关键词 - 政治新闻
+  private static final String QUESTION_PRESIDENT = "总统";
+  private static final String QUESTION_POLICY = "政策";
+  private static final String QUESTION_NEWS = "新闻";
+  // 越界话题关键词 - 医疗健康
+  private static final String QUESTION_DOCTOR = "医生";
+  private static final String QUESTION_HOSPITAL = "医院";
+  private static final String QUESTION_MEDICINE = "药";
+  // 越界话题关键词 - 法律咨询
+  private static final String QUESTION_LAW = "法律";
+  private static final String QUESTION_LAWYER = "律师";
 
-    private static final String TERM_REFUND = "\u9000\u6b3e";
-    private static final String TERM_RETURN = "\u9000\u8d27";
-    private static final String TERM_AFTER_SALES = "\u552e\u540e";
-    private static final String TERM_WARRANTY = "\u4fdd\u4fee";
+  // 售后政策相关关键词
+  private static final String TERM_REFUND = "退款";
+  private static final String TERM_RETURN = "退货";
+  private static final String TERM_AFTER_SALES = "售后";
+  private static final String TERM_WARRANTY = "保修";
 
-    private static final String TERM_DELIVERY = "\u914d\u9001";
-    private static final String TERM_SHIPPING = "\u53d1\u8d27";
-    private static final String TERM_EXPRESS = "\u5feb\u9012";
-    private static final String TERM_LOGISTICS = "\u7269\u6d41";
-    private static final String TERM_FREIGHT = "\u8fd0\u8d39";
+  // 配送政策相关关键词
+  private static final String TERM_DELIVERY = "配送";
+  private static final String TERM_SHIPPING = "发货";
+  private static final String TERM_EXPRESS = "快递";
+  private static final String TERM_LOGISTICS = "物流";
+  private static final String TERM_FREIGHT = "运费";
 
-    private static final String TERM_INVENTORY = "\u5e93\u5b58";
-    private static final String TERM_AVAILABLE = "\u6709\u8d27";
-    private static final String TERM_PRICE = "\u4ef7\u683c";
-    private static final String TERM_HOW_MUCH = "\u591a\u5c11\u94b1";
-    private static final String TERM_SECKILL_PRICE = "\u79d2\u6740\u4ef7";
+  // 实时状态相关关键词
+  private static final String TERM_INVENTORY = "库存";
+  private static final String TERM_AVAILABLE = "有货";
+  private static final String TERM_PRICE = "价格";
+  private static final String TERM_HOW_MUCH = "多少钱";
+  private static final String TERM_SECKILL_PRICE = "秒杀价";
 
-    private static final String TERM_SECKILL = "\u79d2\u6740";
-    private static final String TERM_ACTIVITY = "\u6d3b\u52a8";
-    private static final String TERM_START = "\u5f00\u59cb";
-    private static final String TERM_END = "\u7ed3\u675f";
+  // 秒杀活动相关关键词
+  private static final String TERM_SECKILL = "秒杀";
+  private static final String TERM_ACTIVITY = "活动";
+  private static final String TERM_START = "开始";
+  private static final String TERM_END = "结束";
 
-    private static final String TERM_PRODUCT = "\u5546\u54c1";
-    private static final String TERM_THIS_PRODUCT = "\u8fd9\u6b3e";
-    private static final String TERM_THIS_ITEM = "\u8fd9\u4e2a";
-    private static final String TERM_THIS_GOODS = "\u8fd9\u4e2a\u5546\u54c1";
-    private static final String TERM_THAT_PRODUCT = "\u8be5\u5546\u54c1";
-    private static final String TERM_INTRO = "\u4ecb\u7ecd";
-    private static final String TERM_DETAIL = "\u8be6\u60c5";
-    private static final String TERM_SELLING_POINT = "\u5356\u70b9";
-    private static final String TERM_SPEC = "\u89c4\u683c";
-    private static final String TERM_MODEL = "\u578b\u53f7";
-    private static final String TERM_SIZE = "\u5c3a\u5bf8";
-    private static final String TERM_COLOR = "\u989c\u8272";
-    private static final String TERM_PARAM = "\u53c2\u6570";
+  // 商品指代与对比相关关键词
+  private static final String TERM_PRODUCT = "商品";
+  private static final String TERM_THIS_PRODUCT = "这款商品";
+  private static final String TERM_THIS_ITEM = "这个商品";
+  private static final String TERM_THIS = "这款";
+  private static final String TERM_IT = "它";
+  private static final String TERM_THAT = "那款";
+  private static final String TERM_COMPARE = "同类";
+  private static final String TERM_COMPARE2 = "比较";
+  private static final String TERM_COMPARE3 = "对比";
+  private static final String TERM_ADVANTAGE = "优势";
+  private static final String TERM_DISADVANTAGE = "不足";
+  private static final String TERM_RECOMMEND = "推荐";
+  private static final String TERM_WORTH_BUYING = "值得买";
+  private static final String TERM_BUY = "购买";
 
-    private static final String TERM_WHO_ARE_YOU = "\u4f60\u662f\u8c01";
-    private static final String TERM_WHAT_IS_YOUR_NAME = "\u4f60\u53eb\u4ec0\u4e48";
-    private static final String TERM_WHAT_CAN_YOU_DO = "\u4f60\u80fd\u505a\u4ec0\u4e48";
-    private static final String TERM_INTRODUCE_YOURSELF = "\u4ecb\u7ecd\u4e00\u4e0b\u4f60\u81ea\u5df1";
-    private static final String TERM_HELLO = "\u4f60\u597d";
-    private static final String TERM_HELLO_POLITE = "\u60a8\u597d";
-    private static final String TERM_ARE_YOU_THERE = "\u5728\u5417";
+  // 商品信息介绍相关关键词
+  private static final String TERM_INTRO = "介绍";
+  private static final String TERM_DETAIL = "详情";
+  private static final String TERM_SELLING_POINT = "卖点";
+  private static final String TERM_SPEC = "规格";
+  private static final String TERM_MODEL = "型号";
+  private static final String TERM_PARAM = "参数";
+  private static final String TERM_SCENE = "场景";
+  private static final String TERM_SUIT = "适合";
 
-    private final EmbeddingClient embeddingClient;
-    private final ChatModelClient chatModelClient;
-    private final ProductKnowledgeClient productKnowledgeClient;
-    private final SeckillKnowledgeClient seckillKnowledgeClient;
-    private final KnowledgeRetrievalService knowledgeRetrievalService;
-    private final PromptBuilderService promptBuilderService;
-    private final ChatSessionService chatSessionService;
-    private final ChatRecordService chatRecordService;
-    private final ChatAuditService chatAuditService;
-    private final ChatJsonCodec chatJsonCodec;
-    private final InMemoryKnowledgeStore knowledgeStore;
-    private final AiProperties aiProperties;
+  // 助手身份与问候相关关键词
+  private static final String TERM_WHO_ARE_YOU = "你是谁";
+  private static final String TERM_WHAT_IS_YOUR_NAME = "你叫什么";
+  private static final String TERM_WHAT_CAN_YOU_DO = "你能做什么";
+  private static final String TERM_INTRODUCE_YOURSELF = "介绍一下你自己";
+  private static final String TERM_HELLO = "你好";
+  private static final String TERM_HELLO_POLITE = "您好";
+  private static final String TERM_ARE_YOU_THERE = "在吗";
+  private static final String TERM_WHY = "为什么";
 
-    @Override
-    @Transactional
-    public ChatResponseVO chat(Long userId, ChatRequestDTO request) {
-        long startNanos = System.nanoTime();
+  // 闲聊相关关键词
+  private static final String TERM_CHAT = "闲聊";
+  private static final String TERM_CHAT2 = "聊天";
+  private static final String TERM_TALK = "聊聊";
+  private static final String TERM_ACCOMPANY = "陪我";
 
-        ChatSessionPO session = chatSessionService.getOrCreate(
-                request.getSessionId(),
-                userId,
-                request.getProductId(),
-                request.getContextType()
-        );
-        Long effectiveProductId = request.getProductId() != null ? request.getProductId() : session.getProductId();
+  // 商品发现相关关键词
+  private static final String TERM_DISCOVERY_ANY = "有没有";
+  private static final String TERM_DISCOVERY_LIST = "有哪些";
+  private static final String TERM_DISCOVERY_WHAT = "有什么";
+  private static final String TERM_DISCOVERY_SELL = "卖什么";
+  private static final String TERM_DISCOVERY_FIND = "找";
+  private static final String TERM_DISCOVERY_SEARCH = "搜索";
+  private static final String TERM_DISCOVERY_RECOMMEND = "推荐";
+  private static final String TERM_DISCOVERY_BUY = "想买";
+  private static final String TERM_DISCOVERY_MALL = "商城";
 
-        QuestionIntent intent = detectIntent(request.getQuestion(), request.getContextType(), effectiveProductId);
-        QuestionCategory category = classifyCategory(request.getQuestion(), request.getContextType(), intent);
+  // 依赖注入的服务与客户端
+  private final ChatSessionService chatSessionService;           // 会话管理服务
+  private final ChatRecordService chatRecordService;             // 对话记录服务
+  private final ChatAuditService chatAuditService;               // 审计服务
+  private final ChatJsonCodec chatJsonCodec;                     // JSON 编解码工具
+  private final InMemoryKnowledgeStore knowledgeStore;           // 内存知识存储
+  private final AiProperties aiProperties;                       // AI 配置属性
+  private final List<ChatRouteStrategy> routeStrategies;         // 所有路由策略实现
+  private final ProductKnowledgeClient productKnowledgeClient;   // 普通商品客户端
+  private final SeckillKnowledgeClient seckillKnowledgeClient;   // 秒杀商品客户端
 
-        knowledgeStore.incrementChatRequests();
+  /**
+   * 处理用户对话请求
+   *
+   * 核心流程：
+   * 1. 获取或创建会话
+   * 2. 意图分类与问题改写
+   * 3. 调用对应路由策略生成回答
+   * 4. 持久化对话记录并更新会话状态
+   *
+   * @param userId  用户ID
+   * @param request 对话请求DTO
+   * @return 对话响应VO
+   */
+  @Override
+  @Transactional
+  public ChatResponseVO chat(Long userId, ChatRequestDTO request) {
+    long startNanos = System.nanoTime();
 
-        List<ChatRecordPO> history = chatRecordService.listRecentHistory(
-                session.getSessionId(),
-                aiProperties.getHistoryLimit()
-        );
-        ChatResponseVO response = buildChatResponse(request, session, effectiveProductId, intent, category, history);
+    // 获取或创建会话
+    ChatSessionPO session = chatSessionService.getOrCreate(
+      request.getSessionId(),
+      userId,
+      request.getProductId(),
+      request.getContextType()
+    );
+    ConversationContextState contextState = chatSessionService.getContextState(session);
 
-        long latencyMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
-        long estimatedTokens = estimateTokens(request.getQuestion(), response.getAnswer());
-        persistChatResult(userId, request, session, effectiveProductId, category, response, latencyMs, estimatedTokens);
+    // 从请求中补充上下文信息（商品ID、名称、类型）
+    hydrateContextFromRequest(request, session, contextState);
+    Long effectiveProductId = resolveEffectiveProductId(request, session, contextState);
 
-        if (!response.getHitKnowledge().isEmpty()) {
-            knowledgeStore.incrementHitRequests();
-        }
-        if (StringUtils.hasText(response.getFallbackReason())) {
-            knowledgeStore.incrementFallbacks();
-        }
-        knowledgeStore.recordLatency(latencyMs, estimatedTokens);
-        return response;
+    // 意图分类与问题改写
+    QuestionIntentType intentType = classifyIntent(request.getQuestion(), request.getContextType(), effectiveProductId, contextState);
+    String rewrittenQuestion = rewriteQuestion(request.getQuestion(), intentType, contextState);
+    QuestionCategory category = classifyCategory(rewrittenQuestion, request.getContextType(), intentType);
+    OutOfScopeTopicType outOfScopeTopicType = intentType == QuestionIntentType.OUT_OF_SCOPE
+      ? classifyOutOfScopeTopic(request.getQuestion())
+      : null;
+
+    log.info("AI route classified, sessionId={}, intentType={}, category={}, productId={}, rewrittenQuestion={}",
+      session.getSessionId(), intentType, category, effectiveProductId, rewrittenQuestion);
+
+    // 初始化上下文状态
+    seedContextState(contextState, effectiveProductId, intentType, rewrittenQuestion);
+
+    // 获取历史对话记录
+    knowledgeStore.incrementChatRequests();
+    List<ChatRecordPO> history = chatRecordService.listRecentHistory(session.getSessionId(), aiProperties.getHistoryLimit());
+
+    // 构建路由请求并执行
+    ChatRouteRequest routeRequest = buildRouteRequest(userId, request, session, effectiveProductId, intentType,
+      outOfScopeTopicType, category, rewrittenQuestion, contextState, history);
+    ChatRouteResult routeResult = resolveStrategy(intentType).execute(routeRequest);
+
+    // 计算耗时与估算Token数
+    long latencyMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
+    long estimatedTokens = estimateTokens(request.getQuestion(), routeResult.getAnswer());
+
+    // 持久化结果
+    persistChatResult(userId, request, session, effectiveProductId, routeResult, latencyMs, estimatedTokens);
+
+    // 更新统计信息
+    if (!routeResult.getHitKnowledge().isEmpty()) {
+      knowledgeStore.incrementHitRequests();
+    }
+    if (StringUtils.hasText(routeResult.getFallbackReason())) {
+      knowledgeStore.incrementFallbacks();
+    }
+    knowledgeStore.recordLatency(latencyMs, estimatedTokens);
+
+    return toResponse(session.getSessionId(), routeResult);
+  }
+
+  /**
+   * 构建路由请求对象
+   */
+  private ChatRouteRequest buildRouteRequest(Long userId, ChatRequestDTO request, ChatSessionPO session,
+                                             Long effectiveProductId, QuestionIntentType intentType,
+                                             OutOfScopeTopicType outOfScopeTopicType, QuestionCategory category,
+                                             String rewrittenQuestion, ConversationContextState contextState,
+                                             List<ChatRecordPO> history) {
+    ChatRouteRequest routeRequest = new ChatRouteRequest();
+    routeRequest.setUserId(userId);
+    routeRequest.setOriginalRequest(request);
+    routeRequest.setSession(session);
+    routeRequest.setCurrentProductId(effectiveProductId);
+    routeRequest.setCurrentProductName(contextState.getCurrentProductName());
+    routeRequest.setCurrentProductType(contextState.getCurrentProductType());
+    routeRequest.setQuestion(request.getQuestion());
+    routeRequest.setRewrittenQuestion(rewrittenQuestion);
+    routeRequest.setIntentType(intentType);
+    routeRequest.setOutOfScopeTopicType(outOfScopeTopicType);
+    routeRequest.setCategory(category);
+    routeRequest.setContextState(contextState);
+    routeRequest.setHistory(history);
+    return routeRequest;
+  }
+
+  @Override
+  public ChatSessionVO getSession(Long userId, String sessionId) {
+    ChatSessionPO session = chatSessionService.getRequired(sessionId, userId);
+    return chatRecordService.getSessionDetail(session, aiProperties.getSessionQueryLimit());
+  }
+
+  @Override
+  public List<ChatSessionSummaryVO> listSessions(Long userId, Integer limit) {
+    int actualLimit = limit == null ? 20 : limit;
+    return chatSessionService.listByUserId(userId, actualLimit);
+  }
+
+  @Override
+  @Transactional
+  public void deleteSession(Long userId, String sessionId) {
+    chatSessionService.getRequired(sessionId, userId);
+    chatRecordService.deleteBySessionId(sessionId);
+    chatSessionService.deleteSession(sessionId, userId);
+  }
+
+  /**
+   * 根据意图类型解析对应的路由策略
+   */
+  private ChatRouteStrategy resolveStrategy(QuestionIntentType intentType) {
+    Map<QuestionIntentType, ChatRouteStrategy> strategyMap = new EnumMap<>(QuestionIntentType.class);
+    for (ChatRouteStrategy strategy : routeStrategies) {
+      strategyMap.put(strategy.supports(), strategy);
+    }
+    return strategyMap.getOrDefault(intentType, strategyMap.get(QuestionIntentType.OUT_OF_SCOPE));
+  }
+
+  /**
+   * 持久化对话结果
+   *
+   * 包括保存对话记录和更新会话状态（最后提问时间、上下文状态等）
+   */
+  private void persistChatResult(Long userId, ChatRequestDTO request, ChatSessionPO session, Long productId,
+                                 ChatRouteResult result, long latencyMs, long estimatedTokens) {
+    String auditSummary = chatAuditService.buildAuditSummary(
+      request.getQuestion(),
+      result.getAnswer(),
+      result.getAnswerPolicy(),
+      result.getFallbackReason(),
+      result.getHitKnowledge()
+    );
+
+    // 构建并保存对话记录
+    ChatRecordPO record = new ChatRecordPO();
+    record.setSessionId(session.getSessionId());
+    record.setUserId(userId);
+    record.setProductId(productId);
+    record.setQuestion(request.getQuestion());
+    record.setQuestionCategory(result.getCategory().name());
+    record.setIntentType(result.getIntentType().name());
+    record.setRouteType(result.getRouteType());
+    record.setRewrittenQuestion(result.getRewrittenQuestion());
+    record.setAnswer(result.getAnswer());
+    record.setAnswerPolicy(result.getAnswerPolicy().name());
+    record.setSourcesJson(chatJsonCodec.writeStringList(result.getSources()));
+    record.setHitKnowledgeJson(chatJsonCodec.writeKnowledgeList(result.getHitKnowledge()));
+    record.setCompareCandidatesJson(chatJsonCodec.writeCandidateList(result.getCompareCandidates()));
+    record.setConfidence(BigDecimal.valueOf(result.getConfidence()));
+    record.setFallbackReason(result.getFallbackReason());
+    record.setAuditSummary(auditSummary);
+    record.setModelName(aiProperties.getChatModel());
+    record.setLatencyMs((int) latencyMs);
+    record.setEstimatedTokens((int) estimatedTokens);
+    record.setCreatedAt(LocalDateTime.now());
+    record.setExpireAt(record.getCreatedAt().plusDays(aiProperties.getSessionTtlDays()));
+    chatRecordService.save(record);
+
+    // 更新会话上下文状态
+    ConversationContextState contextState = result.getContextState();
+    hydrateContextIdentity(contextState, productId, request.getProductName(), request.getProductType());
+    contextState.setCurrentIntentType(result.getIntentType().name());
+    contextState.setLastQuestion(request.getQuestion());
+    contextState.setLastAnswerSummary(summarizeAnswer(result.getAnswer()));
+    contextState.setRewrittenQuestion(result.getRewrittenQuestion());
+    if (productId != null) {
+      contextState.setCurrentProductId(productId);
     }
 
-    @Override
-    public ChatSessionVO getSession(Long userId, String sessionId) {
-        ChatSessionPO session = chatSessionService.getRequired(sessionId, userId);
-        return chatRecordService.getSessionDetail(session, aiProperties.getSessionQueryLimit());
+    // 刷新会话信息
+    chatSessionService.refreshSession(
+      session,
+      request.getQuestion(),
+      summarizeAnswer(result.getAnswer()),
+      productId,
+      request.getContextType(),
+      contextState
+    );
+  }
+
+  /**
+   * 将路由结果转换为响应VO
+   */
+  private ChatResponseVO toResponse(String sessionId, ChatRouteResult result) {
+    ChatResponseVO response = new ChatResponseVO();
+    response.setSessionId(sessionId);
+    response.setCategory(result.getCategory().name());
+    response.setIntentType(result.getIntentType().name());
+    response.setRouteType(result.getRouteType());
+    response.setRewrittenQuestion(result.getRewrittenQuestion());
+    response.setContextState(result.getContextState());
+    response.setAnswer(result.getAnswer());
+    response.setSources(result.getSources());
+    response.setHitKnowledge(result.getHitKnowledge());
+    response.setCompareCandidates(result.getCompareCandidates());
+    response.setConfidence(result.getConfidence());
+    response.setFallbackReason(result.getFallbackReason());
+    response.setAnswerPolicy(result.getAnswerPolicy().name());
+    return response;
+  }
+
+  /**
+   * 解析当前生效的商品ID
+   *
+   * 优先级：请求参数 > 上下文状态 > 会话锚定商品
+   */
+  private Long resolveEffectiveProductId(ChatRequestDTO request, ChatSessionPO session, ConversationContextState contextState) {
+    if (request.getProductId() != null) {
+      return request.getProductId();
+    }
+    if (contextState.getCurrentProductId() != null) {
+      return contextState.getCurrentProductId();
+    }
+    return session.getProductId();
+  }
+
+  /**
+   * 从请求中补充上下文信息
+   *
+   * 包括商品ID、商品名称、商品类型，并初始化对比候选列表
+   */
+  private void hydrateContextFromRequest(ChatRequestDTO request, ChatSessionPO session, ConversationContextState contextState) {
+    // 初始化集合字段，避免 NPE
+    if (contextState.getCompareCandidateIds() == null) {
+      contextState.setCompareCandidateIds(List.of());
+    }
+    if (contextState.getCompareCandidateNames() == null) {
+      contextState.setCompareCandidateNames(List.of());
     }
 
-    private ChatResponseVO buildChatResponse(ChatRequestDTO request, ChatSessionPO session, Long productId,
-                                             QuestionIntent intent, QuestionCategory category, List<ChatRecordPO> history) {
-        if (intent == QuestionIntent.IDENTITY) {
-            return buildResponse(
-                    session.getSessionId(),
-                    QuestionCategory.OUT_OF_SCOPE,
-                    "\u6211\u662f\u5546\u57ce\u5546\u54c1\u77e5\u8bc6\u5ba2\u670d\u52a9\u624b\uff0c\u4e3b\u8981\u7528\u4e8e\u56de\u7b54\u5546\u54c1\u4fe1\u606f\u3001\u79d2\u6740\u6d3b\u52a8\u3001\u914d\u9001\u548c\u552e\u540e\u76f8\u5173\u95ee\u9898\u3002",
-                    List.of(),
-                    1d,
-                    FALLBACK_ASSISTANT_INTRO,
-                    AnswerPolicy.FIXED_TEMPLATE
-            );
-        }
-        if (intent == QuestionIntent.GREETING) {
-            return buildResponse(
-                    session.getSessionId(),
-                    QuestionCategory.OUT_OF_SCOPE,
-                    "\u4f60\u597d\uff0c\u6211\u53ef\u4ee5\u5e2e\u4f60\u89e3\u7b54\u5546\u54c1\u4fe1\u606f\u3001\u6d3b\u52a8\u89c4\u5219\u3001\u5e93\u5b58\u4ef7\u683c\u3001\u914d\u9001\u548c\u552e\u540e\u95ee\u9898\u3002",
-                    List.of(),
-                    1d,
-                    FALLBACK_GREETING,
-                    AnswerPolicy.FIXED_TEMPLATE
-            );
-        }
-        if (intent == QuestionIntent.OUT_OF_SCOPE) {
-            return buildResponse(
-                    session.getSessionId(),
-                    QuestionCategory.OUT_OF_SCOPE,
-                    "\u5f53\u524d\u4ec5\u652f\u6301\u5546\u54c1\u4fe1\u606f\u3001\u6d3b\u52a8\u89c4\u5219\u3001\u914d\u9001\u548c\u552e\u540e\u76f8\u5173\u54a8\u8be2\uff0c\u8bf7\u63cf\u8ff0\u5177\u4f53\u5546\u54c1\u95ee\u9898\u6216\u8054\u7cfb\u4eba\u5de5\u5ba2\u670d\u3002",
-                    List.of(),
-                    0d,
-                    FALLBACK_OUT_OF_SCOPE,
-                    AnswerPolicy.OUT_OF_SCOPE_REFUSAL
-            );
-        }
-
-        List<Double> questionEmbedding = embeddingClient.embed(request.getQuestion());
-        List<RelatedKnowledgeVO> hitKnowledge = new ArrayList<>(
-                knowledgeRetrievalService.retrieve(request.getQuestion(), questionEmbedding, category, productId)
-        );
-
-        String realtimeFacts = buildRealtimeFacts(productId, category);
-        if (StringUtils.hasText(realtimeFacts)) {
-            hitKnowledge.add(realtimeKnowledge(productId, realtimeFacts));
-        }
-
-        double confidence = hitKnowledge.stream().mapToDouble(RelatedKnowledgeVO::getScore).max().orElse(0d);
-        if (!hasReliableEvidence(request, category, productId, hitKnowledge, confidence)) {
-            knowledgeStore.incrementNoResult();
-            return buildResponse(
-                    session.getSessionId(),
-                    category,
-                    buildNoKnowledgeAnswer(request.getQuestion(), category, productId, hitKnowledge, realtimeFacts),
-                    hitKnowledge,
-                    confidence,
-                    FALLBACK_NO_RELEVANT_KNOWLEDGE,
-                    StringUtils.hasText(realtimeFacts) ? AnswerPolicy.REALTIME_ONLY : AnswerPolicy.RAG_FALLBACK_NO_KNOWLEDGE
-            );
-        }
-
-        String prompt = promptBuilderService.buildPrompt(
-                request.getQuestion(),
-                category,
-                hitKnowledge,
-                history,
-                realtimeFacts
-        );
-        try {
-            return buildResponse(
-                    session.getSessionId(),
-                    category,
-                    chatModelClient.chat(prompt),
-                    hitKnowledge,
-                    confidence,
-                    null,
-                    AnswerPolicy.RAG_MODEL
-            );
-        } catch (ModelInvokeException ex) {
-            knowledgeStore.incrementModelFailures();
-            log.warn("Chat model unavailable, fallback to deterministic answer: {}", ex.getMessage());
-            return buildResponse(
-                    session.getSessionId(),
-                    category,
-                    safeDeterministicAnswer(hitKnowledge, realtimeFacts, category),
-                    hitKnowledge,
-                    confidence,
-                    FALLBACK_MODEL_UNAVAILABLE,
-                    StringUtils.hasText(realtimeFacts) ? AnswerPolicy.REALTIME_ONLY : AnswerPolicy.RAG_FALLBACK_MODEL_ERROR
-            );
-        }
+    Long requestProductId = request.getProductId();
+    if (requestProductId != null) {
+      // 请求中明确携带商品ID时，更新上下文
+      if (!requestProductId.equals(contextState.getCurrentProductId())) {
+        contextState.setCurrentProductId(requestProductId);
+      }
+      if (StringUtils.hasText(request.getProductName())) {
+        contextState.setCurrentProductName(request.getProductName().trim());
+      }
+      if (StringUtils.hasText(request.getProductType())) {
+        contextState.setCurrentProductType(request.getProductType().trim());
+      }
+    } else if (contextState.getCurrentProductId() == null && session.getProductId() != null) {
+      // 旧会话可能没有请求参数，沿用会话中的商品锚点
+      contextState.setCurrentProductId(session.getProductId());
     }
 
-    private void persistChatResult(Long userId, ChatRequestDTO request, ChatSessionPO session, Long productId,
-                                   QuestionCategory category, ChatResponseVO response, long latencyMs, long estimatedTokens) {
-        String auditSummary = chatAuditService.buildAuditSummary(
-                request.getQuestion(),
-                response.getAnswer(),
-                AnswerPolicy.valueOf(response.getAnswerPolicy()),
-                response.getFallbackReason(),
-                response.getHitKnowledge()
-        );
+    // 补充商品名称和类型（如果缺失）
+    hydrateContextIdentity(
+      contextState,
+      resolveEffectiveProductId(request, session, contextState),
+      request.getProductName(),
+      request.getProductType()
+    );
+  }
 
-        ChatRecordPO record = new ChatRecordPO();
-        record.setSessionId(session.getSessionId());
-        record.setUserId(userId);
-        record.setProductId(productId);
-        record.setQuestion(request.getQuestion());
-        record.setQuestionCategory(category.name());
-        record.setAnswer(response.getAnswer());
-        record.setAnswerPolicy(response.getAnswerPolicy());
-        record.setSourcesJson(chatJsonCodec.writeStringList(response.getSources()));
-        record.setHitKnowledgeJson(chatJsonCodec.writeKnowledgeList(response.getHitKnowledge()));
-        record.setConfidence(BigDecimal.valueOf(response.getConfidence()));
-        record.setFallbackReason(response.getFallbackReason());
-        record.setAuditSummary(auditSummary);
-        record.setModelName(aiProperties.getChatModel());
-        record.setLatencyMs((int) latencyMs);
-        record.setEstimatedTokens((int) estimatedTokens);
-        record.setCreatedAt(LocalDateTime.now());
-        record.setExpireAt(record.getCreatedAt().plusDays(aiProperties.getSessionTtlDays()));
-        chatRecordService.save(record);
-
-        chatSessionService.refreshSession(
-                session,
-                request.getQuestion(),
-                summarizeAnswer(response.getAnswer()),
-                productId,
-                request.getContextType()
-        );
+  /**
+   * 补全上下文中的商品标识信息（名称、类型）
+   *
+   * 当上下文中缺失商品名称或类型时，尝试从知识库客户端获取
+   */
+  private void hydrateContextIdentity(ConversationContextState contextState, Long productId,
+                                      String requestProductName, String requestProductType) {
+    if (productId == null) {
+      return;
     }
 
-    private QuestionIntent detectIntent(String question, String contextType, Long productId) {
-        String normalizedQuestion = normalize(question);
-        if (isAssistantIdentityQuestion(normalizedQuestion)) {
-            return QuestionIntent.IDENTITY;
-        }
-        if (isGreetingOnly(normalizedQuestion)) {
-            return QuestionIntent.GREETING;
-        }
-        if (containsAny(normalizedQuestion, QUESTION_WEATHER, QUESTION_STOCK, QUESTION_CODE, QUESTION_PRESIDENT)) {
-            return QuestionIntent.OUT_OF_SCOPE;
-        }
-        if (hasBusinessSignals(normalizedQuestion)
-                || hasProductContext(contextType, productId)
-                || mentionsKnownProduct(normalizedQuestion)) {
-            return QuestionIntent.DOMAIN_QA;
-        }
-        return QuestionIntent.OUT_OF_SCOPE;
+    // 优先使用请求中携带的信息
+    if (StringUtils.hasText(requestProductName)) {
+      contextState.setCurrentProductName(requestProductName.trim());
+    }
+    if (StringUtils.hasText(requestProductType)) {
+      contextState.setCurrentProductType(requestProductType.trim());
+    }
+    if (StringUtils.hasText(contextState.getCurrentProductName()) && StringUtils.hasText(contextState.getCurrentProductType())) {
+      return;
     }
 
-    private QuestionCategory classifyCategory(String question, String contextType, QuestionIntent intent) {
-        if (intent != QuestionIntent.DOMAIN_QA) {
-            return QuestionCategory.OUT_OF_SCOPE;
-        }
+    // 缺失时从数据源获取
+    ProductIdentity identity = fetchProductIdentity(productId, contextState.getCurrentProductType(), contextState.getCurrentProductName());
+    if (identity == null) {
+      return;
+    }
+    if (!StringUtils.hasText(contextState.getCurrentProductName())) {
+      contextState.setCurrentProductName(identity.productName());
+    }
+    if (!StringUtils.hasText(contextState.getCurrentProductType())) {
+      contextState.setCurrentProductType(identity.productType());
+    }
+  }
 
-        String normalizedQuestion = normalize(question);
-        if (containsAny(normalizedQuestion, TERM_REFUND, TERM_RETURN, TERM_AFTER_SALES, TERM_WARRANTY)) {
-            return QuestionCategory.AFTER_SALES_POLICY;
-        }
-        if (containsAny(normalizedQuestion, TERM_DELIVERY, TERM_SHIPPING, TERM_EXPRESS, TERM_LOGISTICS, TERM_FREIGHT)) {
-            return QuestionCategory.DELIVERY_POLICY;
-        }
-        if (containsAny(normalizedQuestion, TERM_INVENTORY, TERM_AVAILABLE, TERM_PRICE, TERM_HOW_MUCH, TERM_SECKILL_PRICE)) {
-            return QuestionCategory.REALTIME_STATUS;
-        }
-        if (containsAny(normalizedQuestion, TERM_SECKILL, TERM_ACTIVITY, TERM_START, TERM_END)) {
-            return QuestionCategory.ACTIVITY_RULE;
-        }
-        if (contextType != null && contextType.toLowerCase(Locale.ROOT).contains("product")) {
-            return QuestionCategory.PRODUCT_INFO;
-        }
-        return QuestionCategory.PRODUCT_INFO;
+  /**
+   * 获取商品身份信息（名称和类型）
+   *
+   * 优先按指定类型查找，若类型不明确则依次尝试普通商品和秒杀商品
+   */
+  private ProductIdentity fetchProductIdentity(Long productId, String preferredType, String preferredName) {
+    if (productId == null) {
+      return null;
     }
 
-    private boolean hasReliableEvidence(ChatRequestDTO request, QuestionCategory category, Long productId,
-                                        List<RelatedKnowledgeVO> hitKnowledge, double confidence) {
-        if (hitKnowledge.isEmpty()) {
-            return false;
-        }
-        if (category == QuestionCategory.PRODUCT_INFO
-                && isAmbiguousProductReference(request.getQuestion())
-                && !hasProductContext(request.getContextType(), productId)) {
-            return false;
-        }
-        if (category == QuestionCategory.REALTIME_STATUS || category == QuestionCategory.ACTIVITY_RULE) {
-            if (hitKnowledge.stream().anyMatch(RelatedKnowledgeVO::isRealtime)) {
-                return true;
-            }
-            if (confidence < aiProperties.getMinConfidence()) {
-                return false;
-            }
-        }
-        if (confidence < aiProperties.getMinConfidence()) {
-            return false;
-        }
+    ProductIdentity normalIdentity = null;
+    ProductIdentity seckillIdentity = null;
 
-        RelatedKnowledgeVO topKnowledge = hitKnowledge.stream()
-                .filter(item -> !item.isRealtime())
-                .findFirst()
-                .orElse(hitKnowledge.get(0));
-
-        return switch (category) {
-            case AFTER_SALES_POLICY, DELIVERY_POLICY -> "RULE".equalsIgnoreCase(topKnowledge.getSourceType());
-            case ACTIVITY_RULE -> "RULE".equalsIgnoreCase(topKnowledge.getSourceType())
-                    || "SECKILL".equalsIgnoreCase(topKnowledge.getSourceType())
-                    || topKnowledge.isRealtime();
-            case PRODUCT_INFO -> hasProductContext(request.getContextType(), productId)
-                    || matchesExplicitProductMention(request.getQuestion(), topKnowledge);
-            case REALTIME_STATUS -> topKnowledge.isRealtime()
-                    || hasProductContext(request.getContextType(), productId)
-                    || matchesExplicitProductMention(request.getQuestion(), topKnowledge);
-            default -> false;
-        };
+    // 优先按指定类型查找
+    if (PRODUCT_TYPE_SECKILL.equalsIgnoreCase(preferredType)) {
+      seckillIdentity = fetchSeckillIdentity(productId);
+      if (seckillIdentity != null) {
+        return seckillIdentity;
+      }
+    }
+    if (PRODUCT_TYPE_NORMAL.equalsIgnoreCase(preferredType)) {
+      normalIdentity = fetchNormalIdentity(productId);
+      if (normalIdentity != null) {
+        return normalIdentity;
+      }
     }
 
-    private boolean hasBusinessSignals(String normalizedQuestion) {
-        return containsAny(
-                normalizedQuestion,
-                TERM_PRODUCT,
-                TERM_THIS_PRODUCT,
-                TERM_THIS_ITEM,
-                TERM_THIS_GOODS,
-                TERM_THAT_PRODUCT,
-                TERM_INTRO,
-                TERM_DETAIL,
-                TERM_SELLING_POINT,
-                TERM_SPEC,
-                TERM_MODEL,
-                TERM_SIZE,
-                TERM_COLOR,
-                TERM_PARAM,
-                TERM_REFUND,
-                TERM_RETURN,
-                TERM_AFTER_SALES,
-                TERM_WARRANTY,
-                TERM_DELIVERY,
-                TERM_SHIPPING,
-                TERM_EXPRESS,
-                TERM_LOGISTICS,
-                TERM_FREIGHT,
-                TERM_INVENTORY,
-                TERM_AVAILABLE,
-                TERM_PRICE,
-                TERM_HOW_MUCH,
-                TERM_SECKILL_PRICE,
-                TERM_SECKILL,
-                TERM_ACTIVITY,
-                TERM_START,
-                TERM_END
-        );
+    // 如果调用方提供了商品名称，利用名称辅助区分同一ID可能对应的两种商品类型
+    if (StringUtils.hasText(preferredName)) {
+      if (normalIdentity == null) {
+        normalIdentity = fetchNormalIdentity(productId);
+      }
+      if (seckillIdentity == null) {
+        seckillIdentity = fetchSeckillIdentity(productId);
+      }
+      if (matchesProductName(normalIdentity, preferredName)) {
+        return normalIdentity;
+      }
+      if (matchesProductName(seckillIdentity, preferredName)) {
+        return seckillIdentity;
+      }
     }
 
-    private boolean hasProductContext(String contextType, Long productId) {
-        return productId != null || (contextType != null && contextType.toLowerCase(Locale.ROOT).contains("product"));
+    // 默认返回普通商品，不存在则返回秒杀商品
+    if (normalIdentity == null) {
+      normalIdentity = fetchNormalIdentity(productId);
+    }
+    if (normalIdentity != null) {
+      return normalIdentity;
+    }
+    if (seckillIdentity == null) {
+      seckillIdentity = fetchSeckillIdentity(productId);
+    }
+    return seckillIdentity;
+  }
+
+  private ProductIdentity fetchNormalIdentity(Long productId) {
+    ProductKnowledgeDTO product = productKnowledgeClient.getProductById(productId);
+    if (product == null || !StringUtils.hasText(product.getName())) {
+      return null;
+    }
+    return new ProductIdentity(product.getName(), PRODUCT_TYPE_NORMAL);
+  }
+
+  private ProductIdentity fetchSeckillIdentity(Long productId) {
+    SeckillKnowledgeDTO seckill = seckillKnowledgeClient.getProductById(productId);
+    if (seckill == null || !StringUtils.hasText(seckill.getName())) {
+      return null;
+    }
+    return new ProductIdentity(seckill.getName(), PRODUCT_TYPE_SECKILL);
+  }
+
+  /**
+   * 检查商品名称是否匹配（忽略大小写和空格）
+   */
+  private boolean matchesProductName(ProductIdentity identity, String preferredName) {
+    if (identity == null || !StringUtils.hasText(preferredName)) {
+      return false;
+    }
+    return normalizeProductName(identity.productName()).equals(normalizeProductName(preferredName));
+  }
+
+  private String normalizeProductName(String productName) {
+    if (!StringUtils.hasText(productName)) {
+      return "";
+    }
+    return productName.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+  }
+
+  /**
+   * 初始化上下文状态（设置对比候选列表、当前意图等）
+   */
+  private void seedContextState(ConversationContextState contextState, Long productId,
+                                QuestionIntentType intentType, String rewrittenQuestion) {
+    if (contextState.getCompareCandidateIds() == null) {
+      contextState.setCompareCandidateIds(List.of());
+    }
+    if (contextState.getCompareCandidateNames() == null) {
+      contextState.setCompareCandidateNames(List.of());
+    }
+    if (productId != null) {
+      contextState.setCurrentProductId(productId);
+    }
+    // 非对比意图时清空对比候选列表
+    if (intentType != QuestionIntentType.COMPARE_RECOMMENDATION) {
+      contextState.setCompareCandidateIds(List.of());
+      contextState.setCompareCandidateNames(List.of());
+    }
+    contextState.setCurrentIntentType(intentType.name());
+    contextState.setRewrittenQuestion(rewrittenQuestion);
+  }
+
+  /**
+   * 意图分类
+   *
+   * 基于关键词规则识别用户意图：
+   * - 问候/身份询问
+   * - 越界话题
+   * - 对比推荐
+   * - 政策问答
+   * - 实时状态
+   * - 商品发现
+   * - 商品事实
+   *
+   * @param question       原始问题
+   * @param contextType    上下文类型
+   * @param productId      当前商品ID
+   * @param contextState   上下文状态
+   * @return 意图类型
+   */
+  private QuestionIntentType classifyIntent(String question, String contextType, Long productId, ConversationContextState contextState) {
+    String normalizedQuestion = normalize(question);
+    boolean hasProductContext = hasProductContext(contextType, productId, contextState);
+
+    // 问候或身份询问
+    if (isAssistantIdentityQuestion(normalizedQuestion) || isGreetingOnly(normalizedQuestion)) {
+      return QuestionIntentType.GREETING_IDENTITY;
+    }
+    // 越界话题检测
+    if (classifyOutOfScopeTopic(question) != OutOfScopeTopicType.UNKNOWN) {
+      return QuestionIntentType.OUT_OF_SCOPE;
+    }
+    // 对比推荐（需有商品上下文）
+    if (hasProductContext && isExplicitCompareIntent(normalizedQuestion)) {
+      return QuestionIntentType.COMPARE_RECOMMENDATION;
+    }
+    // 政策问答
+    if (containsAny(normalizedQuestion, TERM_REFUND, TERM_RETURN, TERM_AFTER_SALES, TERM_WARRANTY,
+      TERM_DELIVERY, TERM_SHIPPING, TERM_EXPRESS, TERM_LOGISTICS, TERM_FREIGHT)) {
+      return QuestionIntentType.POLICY_QA;
+    }
+    // 实时状态
+    if (containsAny(normalizedQuestion, TERM_INVENTORY, TERM_AVAILABLE, TERM_PRICE, TERM_HOW_MUCH, TERM_SECKILL_PRICE,
+      TERM_SECKILL, TERM_ACTIVITY, TERM_START, TERM_END)) {
+      return QuestionIntentType.REALTIME_STATUS;
+    }
+    // 商品发现
+    if (isDiscoveryQuestion(normalizedQuestion, hasProductContext)) {
+      return QuestionIntentType.PRODUCT_DISCOVERY;
+    }
+    // 无上下文的对比推荐相关词汇视为越界
+    if (isExplicitCompareIntent(normalizedQuestion)) {
+      return QuestionIntentType.OUT_OF_SCOPE;
+    }
+    // 商品事实问答
+    if (hasBusinessSignals(normalizedQuestion) || hasProductContext || mentionsKnownProduct(normalizedQuestion)) {
+      return QuestionIntentType.PRODUCT_FACT;
     }
 
-    private boolean isAssistantIdentityQuestion(String normalizedQuestion) {
-        return containsAny(
-                normalizedQuestion,
-                TERM_WHO_ARE_YOU,
-                TERM_WHAT_IS_YOUR_NAME,
-                TERM_WHAT_CAN_YOU_DO,
-                TERM_INTRODUCE_YOURSELF
-        );
+    return QuestionIntentType.OUT_OF_SCOPE;
+  }
+
+  /**
+   * 细分越界话题类型
+   */
+  private OutOfScopeTopicType classifyOutOfScopeTopic(String question) {
+    String normalizedQuestion = normalize(question);
+    if (containsAny(normalizedQuestion, QUESTION_WEATHER)) {
+      return OutOfScopeTopicType.WEATHER;
+    }
+    if (containsAny(normalizedQuestion, QUESTION_STOCK, QUESTION_FUND, QUESTION_FINANCIAL, QUESTION_MARKET)) {
+      return OutOfScopeTopicType.FINANCE;
+    }
+    if (containsAny(normalizedQuestion, QUESTION_CODE, QUESTION_PROGRAM, QUESTION_BUG)) {
+      return OutOfScopeTopicType.TECH;
+    }
+    if (containsAny(normalizedQuestion, QUESTION_DOCTOR, QUESTION_HOSPITAL, QUESTION_MEDICINE)) {
+      return OutOfScopeTopicType.MEDICAL;
+    }
+    if (containsAny(normalizedQuestion, QUESTION_LAW, QUESTION_LAWYER)) {
+      return OutOfScopeTopicType.LEGAL;
+    }
+    if (containsAny(normalizedQuestion, QUESTION_PRESIDENT, QUESTION_POLICY, QUESTION_NEWS)) {
+      return OutOfScopeTopicType.POLITICS;
+    }
+    if (containsAny(normalizedQuestion, TERM_CHAT, TERM_CHAT2, TERM_TALK, TERM_ACCOMPANY)) {
+      return OutOfScopeTopicType.GENERAL_CHAT;
+    }
+    return OutOfScopeTopicType.UNKNOWN;
+  }
+
+  /**
+   * 问题类别细分
+   */
+  private QuestionCategory classifyCategory(String question, String contextType, QuestionIntentType intentType) {
+    if (intentType == QuestionIntentType.OUT_OF_SCOPE || intentType == QuestionIntentType.GREETING_IDENTITY) {
+      return QuestionCategory.OUT_OF_SCOPE;
+    }
+    if (intentType == QuestionIntentType.PRODUCT_DISCOVERY) {
+      return QuestionCategory.PRODUCT_DISCOVERY;
+    }
+    String normalizedQuestion = normalize(question);
+    if (intentType == QuestionIntentType.COMPARE_RECOMMENDATION) {
+      return QuestionCategory.COMPARE_RECOMMENDATION;
+    }
+    if (intentType == QuestionIntentType.POLICY_QA) {
+      if (containsAny(normalizedQuestion, TERM_DELIVERY, TERM_SHIPPING, TERM_EXPRESS, TERM_LOGISTICS, TERM_FREIGHT)) {
+        return QuestionCategory.DELIVERY_POLICY;
+      }
+      return QuestionCategory.AFTER_SALES_POLICY;
+    }
+    if (intentType == QuestionIntentType.REALTIME_STATUS) {
+      if (containsAny(normalizedQuestion, TERM_SECKILL, TERM_ACTIVITY, TERM_START, TERM_END)) {
+        return QuestionCategory.ACTIVITY_RULE;
+      }
+      return QuestionCategory.REALTIME_STATUS;
+    }
+    if (contextType != null && contextType.toLowerCase(Locale.ROOT).contains("product")) {
+      return QuestionCategory.PRODUCT_INFO;
+    }
+    return QuestionCategory.PRODUCT_INFO;
+  }
+
+  /**
+   * 问题改写
+   *
+   * 将问题中的代词（"这款"、"它"等）替换为当前商品名称，补充上下文信息
+   */
+  private String rewriteQuestion(String question, QuestionIntentType intentType, ConversationContextState contextState) {
+    if (!StringUtils.hasText(question)) {
+      return "";
+    }
+    String rewritten = question.trim();
+    String currentProductName = contextState.getCurrentProductName();
+
+    // 代词替换
+    if (StringUtils.hasText(currentProductName)) {
+      rewritten = rewritten
+        .replace(TERM_THIS_PRODUCT, currentProductName)
+        .replace(TERM_THIS_ITEM, currentProductName)
+        .replace(TERM_THIS, currentProductName)
+        .replace(TERM_IT, currentProductName)
+        .replace(TERM_THAT, currentProductName);
+      if (intentType == QuestionIntentType.COMPARE_RECOMMENDATION && !rewritten.contains(currentProductName)) {
+        rewritten = "围绕" + currentProductName + "，" + rewritten;
+      }
     }
 
-    private boolean isGreetingOnly(String normalizedQuestion) {
-        String compactQuestion = normalizedQuestion
-                .replace("\uFF0C", "")
-                .replace("\u3002", "")
-                .replace("\uFF01", "")
-                .replace("\uFF1F", "")
-                .replace(",", "")
-                .replace(".", "")
-                .replace("!", "")
-                .replace("?", "")
-                .trim();
-        return compactQuestion.equals(TERM_HELLO)
-                || compactQuestion.equals(TERM_HELLO_POLITE)
-                || compactQuestion.equals("hi")
-                || compactQuestion.equals("hello")
-                || compactQuestion.equals(TERM_ARE_YOU_THERE);
+    // 处理追问"为什么"
+    if (rewritten.equals(TERM_WHY) && StringUtils.hasText(contextState.getLastQuestion())) {
+      rewritten = "针对上一个问题「" + contextState.getLastQuestion() + "」，请解释原因。";
     }
 
-    private boolean mentionsKnownProduct(String normalizedQuestion) {
-        if (!StringUtils.hasText(normalizedQuestion)) {
-            return false;
-        }
-        return knowledgeStore.getAllChunks().stream()
-                .filter(chunk -> chunk.getSourceType() != null)
-                .filter(chunk -> "PRODUCT".equalsIgnoreCase(chunk.getSourceType().name())
-                        || "SECKILL".equalsIgnoreCase(chunk.getSourceType().name()))
-                .map(chunk -> compact(chunk.getTitle()))
-                .filter(StringUtils::hasText)
-                .anyMatch(compactTitle -> compact(normalizedQuestion).contains(compactTitle));
+    // 商品事实类问题补充商品名
+    if (intentType == QuestionIntentType.PRODUCT_FACT && StringUtils.hasText(currentProductName) && rewritten.length() <= 12) {
+      rewritten = "关于" + currentProductName + "，" + rewritten;
+    }
+    return rewritten;
+  }
+
+  /**
+   * 判断是否为商品发现问题
+   */
+  private boolean isDiscoveryQuestion(String normalizedQuestion, boolean hasProductContext) {
+    if (!StringUtils.hasText(normalizedQuestion)) {
+      return false;
     }
 
-    private boolean matchesExplicitProductMention(String question, RelatedKnowledgeVO knowledge) {
-        if (knowledge == null || !StringUtils.hasText(knowledge.getTitle())) {
-            return false;
-        }
-        if (!"PRODUCT".equalsIgnoreCase(knowledge.getSourceType())
-                && !"SECKILL".equalsIgnoreCase(knowledge.getSourceType())) {
-            return false;
-        }
-        String compactQuestion = compact(question);
-        String compactTitle = compact(knowledge.getTitle());
-        return StringUtils.hasText(compactQuestion)
-                && StringUtils.hasText(compactTitle)
-                && compactQuestion.contains(compactTitle);
+    // 明确的发现关键词
+    boolean explicitDiscovery = containsAny(
+      normalizedQuestion,
+      TERM_DISCOVERY_ANY,
+      TERM_DISCOVERY_LIST,
+      TERM_DISCOVERY_WHAT,
+      TERM_DISCOVERY_SELL,
+      TERM_DISCOVERY_FIND,
+      TERM_DISCOVERY_SEARCH
+    ) || (normalizedQuestion.contains(TERM_DISCOVERY_MALL) && normalizedQuestion.contains(TERM_PRODUCT));
+
+    if (explicitDiscovery) {
+      // 若有明确商品上下文且问题包含指代词，则不是纯发现意图
+      return !(hasProductContext && hasCurrentProductReference(normalizedQuestion));
     }
+    // 无商品上下文时的推荐/购买意图视为商品发现
+    return !hasProductContext && containsAny(normalizedQuestion, TERM_DISCOVERY_RECOMMEND, TERM_DISCOVERY_BUY);
+  }
 
-    private boolean isAmbiguousProductReference(String question) {
-        String normalizedQuestion = normalize(question);
-        return containsAny(normalizedQuestion, TERM_THIS_PRODUCT, TERM_THIS_ITEM, TERM_THIS_GOODS, TERM_THAT_PRODUCT)
-                && !mentionsKnownProduct(normalizedQuestion);
+  /**
+   * 检查问题中是否包含当前商品的指代词
+   */
+  private boolean hasCurrentProductReference(String normalizedQuestion) {
+    return containsAny(normalizedQuestion, TERM_THIS_PRODUCT, TERM_THIS_ITEM, TERM_THIS, TERM_IT, TERM_THAT);
+  }
+
+  /**
+   * 检查问题中是否包含业务相关信号（商品介绍、参数等）
+   */
+  private boolean hasBusinessSignals(String normalizedQuestion) {
+    return containsAny(
+      normalizedQuestion,
+      TERM_PRODUCT,
+      TERM_THIS_PRODUCT,
+      TERM_THIS_ITEM,
+      TERM_THIS,
+      TERM_IT,
+      TERM_THAT,
+      TERM_INTRO,
+      TERM_DETAIL,
+      TERM_SELLING_POINT,
+      TERM_SPEC,
+      TERM_MODEL,
+      TERM_PARAM,
+      TERM_SCENE,
+      TERM_SUIT
+    );
+  }
+
+  /**
+   * compare intent 鍙鍙槑纭殑瀵规瘮淇″彿銆?
+   * 鈥滄帹鑽?鎯充拱/鍊煎緱涔扳€濇洿鍍忚喘涔板缓璁垨鍟嗗搧闂瓟锛屼笉搴旂洿鎺ヨ鍒ゆ柇涓?compare銆?
+   */
+  private boolean isExplicitCompareIntent(String normalizedQuestion) {
+    return containsAny(
+      normalizedQuestion,
+      TERM_COMPARE,
+      TERM_COMPARE2,
+      TERM_COMPARE3,
+      TERM_ADVANTAGE,
+      TERM_DISADVANTAGE
+    ) || normalizedQuestion.contains("鍝釜鏇村ソ")
+      || normalizedQuestion.contains("鏇夸唬")
+      || normalizedQuestion.contains("鍝釜鏇村€煎緱");
+  }
+
+  /**
+   * 判断是否存在商品上下文（请求参数、会话锚定或上下文中已有商品信息）
+   */
+  private boolean hasProductContext(String contextType, Long productId, ConversationContextState contextState) {
+    return productId != null
+      || contextState.getCurrentProductId() != null
+      || StringUtils.hasText(contextState.getCurrentProductName())
+      || (contextType != null && contextType.toLowerCase(Locale.ROOT).contains("product"));
+  }
+
+  /**
+   * 判断是否为助手身份询问
+   */
+  private boolean isAssistantIdentityQuestion(String normalizedQuestion) {
+    return containsAny(normalizedQuestion, TERM_WHO_ARE_YOU, TERM_WHAT_IS_YOUR_NAME, TERM_WHAT_CAN_YOU_DO, TERM_INTRODUCE_YOURSELF);
+  }
+
+  /**
+   * 判断是否为纯问候语
+   */
+  private boolean isGreetingOnly(String normalizedQuestion) {
+    String compactQuestion = normalizedQuestion
+      .replace("，", "")
+      .replace("。", "")
+      .replace("！", "")
+      .replace("？", "")
+      .replace(",", "")
+      .replace(".", "")
+      .replace("!", "")
+      .replace("?", "")
+      .trim();
+    return compactQuestion.equals(TERM_HELLO)
+      || compactQuestion.equals(TERM_HELLO_POLITE)
+      || compactQuestion.equals("hi")
+      || compactQuestion.equals("hello")
+      || compactQuestion.equals(TERM_ARE_YOU_THERE);
+  }
+
+  /**
+   * 检查问题中是否提及了知识库中已知的商品名称
+   */
+  private boolean mentionsKnownProduct(String normalizedQuestion) {
+    if (!StringUtils.hasText(normalizedQuestion)) {
+      return false;
     }
+    return knowledgeStore.getAllChunks().stream()
+      .filter(chunk -> chunk.getSourceType() != null)
+      .filter(chunk -> "PRODUCT".equalsIgnoreCase(chunk.getSourceType().name())
+        || "SECKILL".equalsIgnoreCase(chunk.getSourceType().name()))
+      .map(chunk -> compact(chunk.getTitle()))
+      .filter(StringUtils::hasText)
+      .anyMatch(compactTitle -> compact(normalizedQuestion).contains(compactTitle));
+  }
 
-    private String buildRealtimeFacts(Long productId, QuestionCategory category) {
-        if ((category != QuestionCategory.REALTIME_STATUS && category != QuestionCategory.ACTIVITY_RULE) || productId == null) {
-            return "";
-        }
+  /**
+   * 文本规范化（转小写、去首尾空格）
+   */
+  private String normalize(String question) {
+    return question == null ? "" : question.toLowerCase(Locale.ROOT).trim();
+  }
 
-        ProductKnowledgeDTO product = productKnowledgeClient.getProductById(productId);
-        if (product != null) {
-            String status = product.getStatus() != null && product.getStatus() == 1
-                    ? "\u4e0a\u67b6\u4e2d"
-                    : "\u5df2\u4e0b\u67b6";
-            return "\u5b9e\u65f6\u5546\u54c1\u4fe1\u606f\uff1a\u552e\u4ef7 " + product.getPrice()
-                    + " \u5143\uff0c\u5e93\u5b58 " + product.getStock()
-                    + " \u4ef6\uff0c\u72b6\u6001 " + status + "\u3002";
-        }
-
-        SeckillKnowledgeDTO seckill = seckillKnowledgeClient.getProductById(productId);
-        if (seckill != null) {
-            return "\u5b9e\u65f6\u79d2\u6740\u4fe1\u606f\uff1a\u79d2\u6740\u4ef7 " + seckill.getSeckillPrice()
-                    + " \u5143\uff0c\u5e93\u5b58 " + seckill.getStock()
-                    + " \u4ef6\uff0c\u6d3b\u52a8\u65f6\u95f4 " + seckill.getStartTime()
-                    + " \u81f3 " + seckill.getEndTime() + "\u3002";
-        }
-
-        return "";
+  /**
+   * 文本紧凑化（去除非字母数字和中文的字符）
+   */
+  private String compact(String text) {
+    if (!StringUtils.hasText(text)) {
+      return "";
     }
+    return text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}\\u4e00-\\u9fa5]+", "");
+  }
 
-    private RelatedKnowledgeVO realtimeKnowledge(Long productId, String realtimeFacts) {
-        RelatedKnowledgeVO knowledge = new RelatedKnowledgeVO();
-        knowledge.setDocumentId("realtime-" + (productId == null ? "unknown" : productId));
-        knowledge.setTitle("\u5b9e\u65f6\u5546\u54c1\u4fe1\u606f");
-        knowledge.setSourceType("REALTIME");
-        knowledge.setSourceId(productId == null ? "" : String.valueOf(productId));
-        knowledge.setSnippet(realtimeFacts);
-        knowledge.setScore(1d);
-        knowledge.setRealtime(true);
-        return knowledge;
+  /**
+   * 检查文本是否包含任意关键词
+   */
+  private boolean containsAny(String text, String... keywords) {
+    for (String keyword : keywords) {
+      if (text.contains(keyword)) {
+        return true;
+      }
     }
+    return false;
+  }
 
-    private ChatResponseVO buildResponse(String sessionId, QuestionCategory category, String answer,
-                                         List<RelatedKnowledgeVO> hitKnowledge, double confidence,
-                                         String fallbackReason, AnswerPolicy answerPolicy) {
-        ChatResponseVO response = new ChatResponseVO();
-        response.setSessionId(sessionId);
-        response.setCategory(category.name());
-        response.setAnswer(answer);
-        response.setSources(hitKnowledge.stream().map(RelatedKnowledgeVO::getTitle).distinct().toList());
-        response.setHitKnowledge(hitKnowledge);
-        response.setConfidence(confidence);
-        response.setFallbackReason(fallbackReason);
-        response.setAnswerPolicy(answerPolicy.name());
-        return response;
+  /**
+   * 生成回答摘要（截取前120字符）
+   */
+  private String summarizeAnswer(String answer) {
+    if (answer == null) {
+      return "";
     }
+    return answer.length() <= 120 ? answer : answer.substring(0, 120);
+  }
 
-    private String fallbackAnswer(QuestionCategory category, String realtimeFacts) {
-        if (StringUtils.hasText(realtimeFacts)) {
-            return realtimeFacts + "\u5982\u9700\u66f4\u51c6\u786e\u7ed3\u679c\uff0c\u8bf7\u4ee5\u9875\u9762\u5b9e\u65f6\u5c55\u793a\u6216\u4eba\u5de5\u5ba2\u670d\u786e\u8ba4\u4e3a\u51c6\u3002";
-        }
-        return switch (category) {
-            case AFTER_SALES_POLICY -> "\u76ee\u524d\u6ca1\u6709\u8db3\u591f\u4f9d\u636e\u786e\u8ba4\u5177\u4f53\u552e\u540e\u7ec6\u8282\uff0c\u5efa\u8bae\u4ee5\u5546\u54c1\u8be6\u60c5\u9875\u552e\u540e\u8bf4\u660e\u6216\u4eba\u5de5\u5ba2\u670d\u7b54\u590d\u4e3a\u51c6\u3002";
-            case DELIVERY_POLICY -> "\u76ee\u524d\u6ca1\u6709\u8db3\u591f\u4f9d\u636e\u786e\u8ba4\u914d\u9001\u65f6\u6548\u548c\u8fd0\u8d39\uff0c\u8bf7\u4ee5\u7ed3\u7b97\u9875\u548c\u5546\u54c1\u8be6\u60c5\u9875\u5c55\u793a\u4e3a\u51c6\u3002";
-            case ACTIVITY_RULE -> "\u5f53\u524d\u65e0\u6cd5\u786e\u8ba4\u6d3b\u52a8\u89c4\u5219\u6216\u6d3b\u52a8\u65f6\u95f4\uff0c\u8bf7\u4ee5\u9875\u9762\u5b9e\u65f6\u6d3b\u52a8\u8bf4\u660e\u4e3a\u51c6\u3002";
-            case REALTIME_STATUS -> "\u5f53\u524d\u65e0\u6cd5\u786e\u8ba4\u5b9e\u65f6\u5e93\u5b58\u3001\u4ef7\u683c\u6216\u6d3b\u52a8\u72b6\u6001\uff0c\u8bf7\u4ee5\u9875\u9762\u5b9e\u65f6\u5c55\u793a\u4e3a\u51c6\u3002";
-            default -> "\u5f53\u524d\u6ca1\u6709\u68c0\u7d22\u5230\u8db3\u591f\u7684\u5546\u54c1\u77e5\u8bc6\uff0c\u5efa\u8bae\u8865\u5145\u5546\u54c1\u540d\u79f0\u3001\u578b\u53f7\u6216\u76f4\u63a5\u54a8\u8be2\u4eba\u5de5\u5ba2\u670d\u3002";
-        };
-    }
+  /**
+   * 估算Token消耗量（粗略按每4字符1 Token计算）
+   */
+  private long estimateTokens(String question, String answer) {
+    int length = (question == null ? 0 : question.length()) + (answer == null ? 0 : answer.length());
+    return Math.max(1L, Math.round(length / 4.0));
+  }
 
-    private String buildNoKnowledgeAnswer(String question, QuestionCategory category, Long productId,
-                                          List<RelatedKnowledgeVO> hitKnowledge, String realtimeFacts) {
-        if (category == QuestionCategory.PRODUCT_INFO
-                && isAmbiguousProductReference(question)
-                && productId == null) {
-            return "\u8fd8\u4e0d\u786e\u5b9a\u4f60\u6307\u7684\u662f\u54ea\u4ef6\u5546\u54c1\uff0c\u8bf7\u76f4\u63a5\u63d0\u4f9b\u5546\u54c1\u540d\u79f0\u3001\u578b\u53f7\uff0c\u6216\u4ece\u5546\u54c1\u8be6\u60c5\u9875\u8fdb\u5165 AI \u52a9\u624b\u63d0\u95ee\u3002";
-        }
-        if (category == QuestionCategory.PRODUCT_INFO
-                && !StringUtils.hasText(realtimeFacts)
-                && hitKnowledge.stream().noneMatch(item -> matchesExplicitProductMention(question, item))) {
-            return "\u5f53\u524d\u6ca1\u6709\u68c0\u7d22\u5230\u4e0e\u8be5\u5546\u54c1\u540d\u79f0\u76f8\u5339\u914d\u7684\u77e5\u8bc6\uff0c\u8bf7\u68c0\u67e5\u5546\u54c1\u540d\u79f0\u662f\u5426\u6b63\u786e\uff0c\u6216\u76f4\u63a5\u5728\u5546\u54c1\u8be6\u60c5\u9875\u63d0\u95ee\u3002";
-        }
-        return fallbackAnswer(category, realtimeFacts);
-    }
-
-    private String safeDeterministicAnswer(List<RelatedKnowledgeVO> hitKnowledge, String realtimeFacts, QuestionCategory category) {
-        if (StringUtils.hasText(realtimeFacts)) {
-            return realtimeFacts + "\u5176\u4f59\u8bf4\u660e\u53ef\u53c2\u8003\u76f8\u5173\u5546\u54c1\u9875\u9762\u6216\u4eba\u5de5\u5ba2\u670d\u3002";
-        }
-
-        RelatedKnowledgeVO topKnowledge = hitKnowledge.stream()
-                .filter(item -> !item.isRealtime())
-                .findFirst()
-                .orElse(null);
-        if (topKnowledge == null) {
-            return fallbackAnswer(category, realtimeFacts);
-        }
-        return "\u6839\u636e\u5f53\u524d\u77e5\u8bc6\u5e93\u4fe1\u606f\uff0c" + topKnowledge.getSnippet();
-    }
-
-    private String normalize(String question) {
-        return question == null ? "" : question.toLowerCase(Locale.ROOT).trim();
-    }
-
-    private String compact(String text) {
-        if (!StringUtils.hasText(text)) {
-            return "";
-        }
-        return text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}\\u4e00-\\u9fa5]+", "");
-    }
-
-    private boolean containsAny(String text, String... keywords) {
-        for (String keyword : keywords) {
-            if (text.contains(keyword)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private String summarizeAnswer(String answer) {
-        if (answer == null) {
-            return "";
-        }
-        return answer.length() <= 120 ? answer : answer.substring(0, 120);
-    }
-
-    private long estimateTokens(String question, String answer) {
-        int length = (question == null ? 0 : question.length()) + (answer == null ? 0 : answer.length());
-        return Math.max(1L, Math.round(length / 4.0));
-    }
-
-    private enum QuestionIntent {
-        IDENTITY,
-        GREETING,
-        DOMAIN_QA,
-        OUT_OF_SCOPE
-    }
+  /**
+   * 商品身份信息记录（内部使用）
+   */
+  private record ProductIdentity(String productName, String productType) {
+  }
 }

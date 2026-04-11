@@ -32,4 +32,19 @@ public class ChatResponseVO {
 
     @Schema(description = "问题分类", example = "AFTER_SALES_POLICY")
     private String category;
+
+    @Schema(description = "意图类型", example = "PRODUCT_FACT")
+    private String intentType;
+
+    @Schema(description = "路由类型", example = "PRODUCT_FACT_RAG")
+    private String routeType;
+
+    @Schema(description = "结合上下文改写后的问题")
+    private String rewrittenQuestion;
+
+    @Schema(description = "当前会话上下文状态")
+    private ConversationContextState contextState;
+
+    @Schema(description = "对比推荐候选商品")
+    private List<ProductCandidateVO> compareCandidates;
 }

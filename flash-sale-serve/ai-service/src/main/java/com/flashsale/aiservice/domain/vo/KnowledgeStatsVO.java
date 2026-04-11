@@ -9,6 +9,7 @@ public class KnowledgeStatsVO {
 
     private int documentCount;
     private int chunkCount;
+    private boolean knowledgeReady;
     private int sessionCount;
     private int chatRecordCount;
     private long totalChatRequests;
@@ -19,4 +20,6 @@ public class KnowledgeStatsVO {
     private double avgLatencyMs;
     private double avgEstimatedTokens;
     private LocalDateTime lastSyncAt;
+    private String lastSyncStatus;
+    private String lastSyncMessage;
 }

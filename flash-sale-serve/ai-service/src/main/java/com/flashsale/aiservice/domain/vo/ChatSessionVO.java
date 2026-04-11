@@ -15,5 +15,6 @@ public class ChatSessionVO {
     private Integer messageCount;
     private LocalDateTime createdAt;
     private LocalDateTime lastActiveAt;
+    private ConversationContextState contextState;
     private List<ChatRecordVO> records;
 }

@@ -126,6 +126,8 @@ function openAssistantForDetail() {
     query: {
       productId: String(mallApp.productDetail.id),
       productName: mallApp.productDetail.name || "",
+      // Preserve the product type from the detail drawer so assistant context is not forced to normal.
+      productType: mallApp.productDetailType || "normal",
       contextType: "product-detail"
     }
   });

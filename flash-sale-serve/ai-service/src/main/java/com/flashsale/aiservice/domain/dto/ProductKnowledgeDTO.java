@@ -2,6 +2,7 @@ package com.flashsale.aiservice.domain.dto;
 
 import com.flashsale.aiservice.domain.enums.KnowledgeSourceType;
 import lombok.Data;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -26,27 +27,45 @@ public class ProductKnowledgeDTO {
         return KnowledgeSourceType.PRODUCT;
     }
 
+    // Keep the legacy method for compatibility, but route it to stable retrieval text only.
+    // This prevents dynamic facts from silently re-entering the embedding corpus.
     public String toKnowledgeText() {
+        return toRetrievalText();
+    }
+
+    // Retrieval text is the stable product description used for embedding and RAG evidence.
+    // Dynamic fields such as price, stock, and status are intentionally excluded here.
+    public String toRetrievalText() {
         StringBuilder builder = new StringBuilder();
-        builder.append("\u5546\u54c1\u540d\u79f0: ").append(name).append("\n");
-        if (subtitle != null && !subtitle.isEmpty()) {
-            builder.append("\u5546\u54c1\u526f\u6807\u9898: ").append(subtitle).append("\n");
-        }
-        if (price != null) {
-            builder.append("\u552e\u4ef7: ").append(price).append(" \u5143\n");
-        }
-        if (marketPrice != null) {
-            builder.append("\u5212\u7ebf\u4ef7: ").append(marketPrice).append(" \u5143\n");
-        }
+        appendLine(builder, "Product name", name);
+        appendLine(builder, "Product subtitle", subtitle);
+        appendLine(builder, "Product detail", detail);
+        return builder.toString();
+    }
+
+    // Realtime facts are built separately so prompt assembly can keep [Evidence] and [Realtime facts] isolated.
+    public String toRealtimeFacts() {
+        StringBuilder builder = new StringBuilder();
+        appendPrice(builder, "Realtime price", price);
+        appendPrice(builder, "Reference market price", marketPrice);
         if (stock != null) {
-            builder.append("\u5e93\u5b58: ").append(stock).append("\n");
+            builder.append("Realtime stock: ").append(stock).append("\n");
         }
         if (status != null) {
-            builder.append("\u72b6\u6001: ").append(status == 1 ? "\u4e0a\u67b6\u4e2d" : "\u5df2\u4e0b\u67b6").append("\n");
-        }
-        if (detail != null && !detail.isEmpty()) {
-            builder.append("\u5546\u54c1\u8be6\u60c5: ").append(detail).append("\n");
+            builder.append("Realtime status: ").append(status == 1 ? "available" : "unavailable").append("\n");
         }
         return builder.toString();
+    }
+
+    private void appendLine(StringBuilder builder, String label, String value) {
+        if (StringUtils.hasText(value)) {
+            builder.append(label).append(": ").append(value.trim()).append("\n");
+        }
+    }
+
+    private void appendPrice(StringBuilder builder, String label, BigDecimal value) {
+        if (value != null) {
+            builder.append(label).append(": ").append(value).append(" CNY\n");
+        }
     }
 }

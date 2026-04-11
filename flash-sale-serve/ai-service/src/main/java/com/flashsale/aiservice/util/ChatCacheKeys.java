@@ -10,4 +10,8 @@ public final class ChatCacheKeys {
     public static String sessionHistory(String sessionId) {
         return PREFIX + "session:" + sessionId + ":history";
     }
+
+    public static String sessionContext(String sessionId) {
+        return PREFIX + "session:" + sessionId + ":context";
+    }
 }

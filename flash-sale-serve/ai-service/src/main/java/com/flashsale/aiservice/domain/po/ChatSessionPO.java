@@ -16,6 +16,7 @@ public class ChatSessionPO {
     private Integer messageCount;
     private String lastQuestion;
     private String lastAnswerSummary;
+    private String contextStateJson;
     private LocalDateTime createdAt;
     private LocalDateTime lastActiveAt;
     private LocalDateTime expireAt;

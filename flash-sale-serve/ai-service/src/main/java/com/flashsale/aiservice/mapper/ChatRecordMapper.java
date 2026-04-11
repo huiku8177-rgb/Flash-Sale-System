@@ -18,6 +18,8 @@ public interface ChatRecordMapper {
 
     List<ChatRecordPO> listRecentBySessionId(@Param("sessionId") String sessionId, @Param("limit") Integer limit);
 
+    int deleteBySessionId(@Param("sessionId") String sessionId);
+
     long countRecords();
 
     int deleteExpired(@Param("deadline") LocalDateTime deadline);

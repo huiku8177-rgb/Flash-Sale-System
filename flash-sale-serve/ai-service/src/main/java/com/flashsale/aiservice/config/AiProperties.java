@@ -43,6 +43,35 @@ public class AiProperties {
                 && StringUtils.hasText(embeddingModel);
     }
 
+    public boolean hasApiKey() {
+        return StringUtils.hasText(apiKey);
+    }
+
+    public String missingChatConfigSummary() {
+        return missingConfigSummary(chatModel, false);
+    }
+
+    public String missingEmbeddingConfigSummary() {
+        return missingConfigSummary(embeddingModel, true);
+    }
+
+    private String missingConfigSummary(String modelValue, boolean embedding) {
+        List<String> missing = new ArrayList<>();
+        if (!enabled) {
+            missing.add("ai.enabled");
+        }
+        if (!StringUtils.hasText(baseUrl)) {
+            missing.add("ai.base-url");
+        }
+        if (!StringUtils.hasText(apiKey)) {
+            missing.add("ai.api-key");
+        }
+        if (!StringUtils.hasText(modelValue)) {
+            missing.add(embedding ? "ai.embedding-model" : "ai.chat-model");
+        }
+        return missing.isEmpty() ? "none" : String.join(", ", missing);
+    }
+
     @Data
     public static class RuleDocumentProperties {
         private String title;

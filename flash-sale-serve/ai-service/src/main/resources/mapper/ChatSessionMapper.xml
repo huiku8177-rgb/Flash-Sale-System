@@ -14,6 +14,7 @@
         <result property="messageCount" column="message_count"/>
         <result property="lastQuestion" column="last_question"/>
         <result property="lastAnswerSummary" column="last_answer_summary"/>
+        <result property="contextStateJson" column="context_state_json"/>
         <result property="createdAt" column="created_at"/>
         <result property="lastActiveAt" column="last_active_at"/>
         <result property="expireAt" column="expire_at"/>
@@ -29,6 +30,7 @@
         message_count,
         last_question,
         last_answer_summary,
+        context_state_json,
         created_at,
         last_active_at,
         expire_at
@@ -44,6 +46,7 @@
             message_count,
             last_question,
             last_answer_summary,
+            context_state_json,
             created_at,
             last_active_at,
             expire_at
@@ -56,6 +59,7 @@
             #{messageCount},
             #{lastQuestion},
             #{lastAnswerSummary},
+            #{contextStateJson},
             #{createdAt},
             #{lastActiveAt},
             #{expireAt}
@@ -69,6 +73,15 @@
         WHERE session_id = #{sessionId}
     </select>
 
+    <select id="listByUserId" resultMap="ChatSessionResultMap">
+        SELECT
+        <include refid="BaseColumns"/>
+        FROM chat_session
+        WHERE user_id = #{userId}
+        ORDER BY last_active_at DESC, created_at DESC
+        LIMIT #{limit}
+    </select>
+
     <update id="updateActivity" parameterType="com.flashsale.aiservice.domain.po.ChatSessionPO">
         UPDATE chat_session
         SET user_id = #{userId},
@@ -77,6 +90,7 @@
             message_count = #{messageCount},
             last_question = #{lastQuestion},
             last_answer_summary = #{lastAnswerSummary},
+            context_state_json = #{contextStateJson},
             last_active_at = #{lastActiveAt},
             expire_at = #{expireAt}
         WHERE session_id = #{sessionId}
@@ -85,6 +99,11 @@
     <select id="countSessions" resultType="long">
         SELECT COUNT(1) FROM chat_session
     </select>
+
+    <delete id="deleteBySessionId">
+        DELETE FROM chat_session
+        WHERE session_id = #{sessionId}
+    </delete>
 
     <delete id="deleteExpired">
         DELETE FROM chat_session

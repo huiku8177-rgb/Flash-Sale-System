@@ -15,10 +15,14 @@ public class ChatRecordPO {
     private Integer recordNo;
     private String question;
     private String questionCategory;
+    private String intentType;
+    private String routeType;
+    private String rewrittenQuestion;
     private String answer;
     private String answerPolicy;
     private String sourcesJson;
     private String hitKnowledgeJson;
+    private String compareCandidatesJson;
     private BigDecimal confidence;
     private String fallbackReason;
     private String auditSummary;

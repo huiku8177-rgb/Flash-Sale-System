@@ -2,6 +2,7 @@ package com.flashsale.aiservice.domain.enums;
 
 public enum AnswerPolicy {
     FIXED_TEMPLATE,
+    DISCOVERY_ONLY,
     RAG_MODEL,
     RAG_FALLBACK_NO_KNOWLEDGE,
     RAG_FALLBACK_MODEL_ERROR,

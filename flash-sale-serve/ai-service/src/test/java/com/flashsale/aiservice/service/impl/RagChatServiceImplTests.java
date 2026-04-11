@@ -23,6 +23,7 @@ import com.flashsale.aiservice.service.ChatSessionService;
 import com.flashsale.aiservice.service.KnowledgeRetrievalService;
 import com.flashsale.aiservice.service.PromptBuilderService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.math.BigDecimal;
@@ -33,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 
 class RagChatServiceImplTests {
 
@@ -129,6 +131,105 @@ class RagChatServiceImplTests {
         assertEquals(QuestionCategory.PRODUCT_INFO.name(), result.getCategory());
         assertEquals(AnswerPolicy.RAG_FALLBACK_NO_KNOWLEDGE.name(), result.getAnswerPolicy());
         assertTrue(result.getAnswer().contains("\u54ea\u4ef6\u5546\u54c1"));
+    }
+
+    @Test
+    void chatUsesOnlyCurrentProductKnowledgeForLockedProductPrompt() {
+        RelatedKnowledgeVO currentProduct = new RelatedKnowledgeVO();
+        currentProduct.setDocumentId("product-1001");
+        currentProduct.setTitle("iPhone 15");
+        currentProduct.setSourceType("PRODUCT");
+        currentProduct.setSourceId("1001");
+        currentProduct.setSnippet("\u5546\u54c1\u8be6\u60c5: \u4e3b\u6253\u65e5\u5e38\u65d7\u8230\u4f53\u9a8c\u548c\u5f71\u50cf\u8868\u73b0");
+        currentProduct.setScore(0.62d);
+
+        RelatedKnowledgeVO otherProduct = new RelatedKnowledgeVO();
+        otherProduct.setDocumentId("product-9999");
+        otherProduct.setTitle("Huawei FreeBuds Pro");
+        otherProduct.setSourceType("PRODUCT");
+        otherProduct.setSourceId("9999");
+        otherProduct.setSnippet("\u8033\u673a\u4ea7\u54c1");
+        otherProduct.setScore(0.95d);
+
+        RelatedKnowledgeVO rule = new RelatedKnowledgeVO();
+        rule.setDocumentId("rule-1");
+        rule.setTitle("\u552e\u540e\u653f\u7b56");
+        rule.setSourceType("RULE");
+        rule.setSourceId("rule-1");
+        rule.setSnippet("\u652f\u63017\u5929\u65e0\u7406\u7531\u9000\u8d27");
+        rule.setScore(0.9d);
+
+        EmbeddingClient embeddingClient = Mockito.mock(EmbeddingClient.class);
+        Mockito.when(embeddingClient.embed(any())).thenReturn(List.of(0.1, 0.2, 0.3));
+
+        ChatModelClient chatModelClient = Mockito.mock(ChatModelClient.class);
+        Mockito.when(chatModelClient.chat(any())).thenReturn("\u6a21\u578b\u56de\u7b54");
+
+        ProductKnowledgeClient productClient = Mockito.mock(ProductKnowledgeClient.class);
+        SeckillKnowledgeClient seckillClient = Mockito.mock(SeckillKnowledgeClient.class);
+
+        KnowledgeRetrievalService retrievalService = Mockito.mock(KnowledgeRetrievalService.class);
+        Mockito.when(retrievalService.retrieve(any(), any(), any(), any())).thenReturn(List.of(rule, otherProduct, currentProduct));
+
+        PromptBuilderService promptBuilderService = Mockito.mock(PromptBuilderService.class);
+        Mockito.when(promptBuilderService.buildPrompt(any(), any(), any(), any(), any())).thenReturn("prompt");
+
+        ChatSessionService chatSessionService = Mockito.mock(ChatSessionService.class);
+        ChatSessionPO session = new ChatSessionPO();
+        session.setSessionId("session-1");
+        session.setProductId(1001L);
+        session.setCreatedAt(LocalDateTime.now());
+        session.setLastActiveAt(LocalDateTime.now());
+        Mockito.when(chatSessionService.getOrCreate(any(), any(), any(), any())).thenReturn(session);
+
+        ChatRecordService chatRecordService = Mockito.mock(ChatRecordService.class);
+        Mockito.when(chatRecordService.listRecentHistory(any(), any(Integer.class))).thenReturn(List.of());
+        Mockito.when(chatRecordService.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ChatAuditService chatAuditService = Mockito.mock(ChatAuditService.class);
+        Mockito.when(chatAuditService.buildAuditSummary(any(), any(), any(), any(), any())).thenReturn("audit-summary");
+
+        ChatJsonCodec chatJsonCodec = new ChatJsonCodec(new ObjectMapper());
+        InMemoryKnowledgeStore store = new InMemoryKnowledgeStore();
+
+        AiProperties properties = new AiProperties();
+        properties.setMinConfidence(0.6d);
+        properties.setHistoryLimit(5);
+        properties.setHistoryCacheSize(5);
+        properties.setSessionTtlDays(7);
+        properties.setChatModel("qwen-turbo");
+
+        RagChatServiceImpl service = new RagChatServiceImpl(
+                embeddingClient,
+                chatModelClient,
+                productClient,
+                seckillClient,
+                retrievalService,
+                promptBuilderService,
+                chatSessionService,
+                chatRecordService,
+                chatAuditService,
+                chatJsonCodec,
+                store,
+                properties
+        );
+
+        ChatRequestDTO request = new ChatRequestDTO();
+        request.setQuestion("iPhone 15 \u9002\u5408\u4ec0\u4e48\u4eba");
+        request.setProductId(1001L);
+        request.setContextType("product-detail");
+
+        ChatResponseVO result = service.chat(10001L, request);
+
+        assertEquals(AnswerPolicy.RAG_MODEL.name(), result.getAnswerPolicy());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<RelatedKnowledgeVO>> knowledgeCaptor = ArgumentCaptor.forClass(List.class);
+        verify(promptBuilderService).buildPrompt(any(), any(), knowledgeCaptor.capture(), any(), any());
+        List<RelatedKnowledgeVO> promptKnowledge = knowledgeCaptor.getValue();
+        assertEquals(1, promptKnowledge.size());
+        assertEquals("1001", promptKnowledge.get(0).getSourceId());
+        assertEquals("PRODUCT", promptKnowledge.get(0).getSourceType());
     }
 
     private RagChatServiceImpl createService(boolean modelFails, List<RelatedKnowledgeVO> knowledge,

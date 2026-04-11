@@ -2,6 +2,7 @@ package com.flashsale.aiservice.domain.dto;
 
 import com.flashsale.aiservice.domain.enums.KnowledgeSourceType;
 import lombok.Data;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -22,27 +23,48 @@ public class SeckillKnowledgeDTO {
         return KnowledgeSourceType.SECKILL;
     }
 
+    // Keep backward compatibility while ensuring embedding text never includes dynamic fields.
     public String toKnowledgeText() {
+        return toRetrievalText();
+    }
+
+    // Seckill retrieval text must stay stable. Price, stock, and activity time belong to realtime facts.
+    public String toRetrievalText() {
         StringBuilder builder = new StringBuilder();
-        builder.append("\u79d2\u6740\u5546\u54c1: ").append(name).append("\n");
-        if (price != null) {
-            builder.append("\u539f\u4ef7: ").append(price).append(" \u5143\n");
-        }
-        if (seckillPrice != null) {
-            builder.append("\u79d2\u6740\u4ef7: ").append(seckillPrice).append(" \u5143\n");
-        }
+        appendLine(builder, "Seckill product", name);
+        appendLine(builder, "Stable rule hint", "Use realtime facts for live price, stock, and activity window.");
+        return builder.toString();
+    }
+
+    // Realtime facts are separated from retrieval evidence to avoid stale-vs-live conflicts in prompt assembly.
+    public String toRealtimeFacts() {
+        StringBuilder builder = new StringBuilder();
+        appendPrice(builder, "Original price", price);
+        appendPrice(builder, "Realtime seckill price", seckillPrice);
         if (stock != null) {
-            builder.append("\u5e93\u5b58: ").append(stock).append("\n");
+            builder.append("Realtime stock: ").append(stock).append("\n");
         }
         if (status != null) {
-            builder.append("\u72b6\u6001: ").append(status == 1 ? "\u6d3b\u52a8\u4e2d" : "\u5df2\u7ed3\u675f").append("\n");
+            builder.append("Realtime activity status: ").append(status == 1 ? "active" : "ended").append("\n");
         }
         if (startTime != null) {
-            builder.append("\u5f00\u59cb\u65f6\u95f4: ").append(startTime).append("\n");
+            builder.append("Activity start time: ").append(startTime).append("\n");
         }
         if (endTime != null) {
-            builder.append("\u7ed3\u675f\u65f6\u95f4: ").append(endTime).append("\n");
+            builder.append("Activity end time: ").append(endTime).append("\n");
         }
         return builder.toString();
+    }
+
+    private void appendLine(StringBuilder builder, String label, String value) {
+        if (StringUtils.hasText(value)) {
+            builder.append(label).append(": ").append(value.trim()).append("\n");
+        }
+    }
+
+    private void appendPrice(StringBuilder builder, String label, BigDecimal value) {
+        if (value != null) {
+            builder.append(label).append(": ").append(value).append(" CNY\n");
+        }
     }
 }

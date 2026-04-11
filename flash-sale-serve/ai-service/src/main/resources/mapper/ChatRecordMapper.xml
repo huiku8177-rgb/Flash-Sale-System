@@ -12,10 +12,14 @@
         <result property="recordNo" column="record_no"/>
         <result property="question" column="question"/>
         <result property="questionCategory" column="question_category"/>
+        <result property="intentType" column="intent_type"/>
+        <result property="routeType" column="route_type"/>
+        <result property="rewrittenQuestion" column="rewritten_question"/>
         <result property="answer" column="answer"/>
         <result property="answerPolicy" column="answer_policy"/>
         <result property="sourcesJson" column="sources_json"/>
         <result property="hitKnowledgeJson" column="hit_knowledge_json"/>
+        <result property="compareCandidatesJson" column="compare_candidates_json"/>
         <result property="confidence" column="confidence"/>
         <result property="fallbackReason" column="fallback_reason"/>
         <result property="auditSummary" column="audit_summary"/>
@@ -34,10 +38,14 @@
         record_no,
         question,
         question_category,
+        intent_type,
+        route_type,
+        rewritten_question,
         answer,
         answer_policy,
         sources_json,
         hit_knowledge_json,
+        compare_candidates_json,
         confidence,
         fallback_reason,
         audit_summary,
@@ -56,10 +64,14 @@
             record_no,
             question,
             question_category,
+            intent_type,
+            route_type,
+            rewritten_question,
             answer,
             answer_policy,
             sources_json,
             hit_knowledge_json,
+            compare_candidates_json,
             confidence,
             fallback_reason,
             audit_summary,
@@ -75,10 +87,14 @@
             #{recordNo},
             #{question},
             #{questionCategory},
+            #{intentType},
+            #{routeType},
+            #{rewrittenQuestion},
             #{answer},
             #{answerPolicy},
             #{sourcesJson},
             #{hitKnowledgeJson},
+            #{compareCandidatesJson},
             #{confidence},
             #{fallbackReason},
             #{auditSummary},
@@ -121,6 +137,11 @@
     <select id="countRecords" resultType="long">
         SELECT COUNT(1) FROM chat_record
     </select>
+
+    <delete id="deleteBySessionId">
+        DELETE FROM chat_record
+        WHERE session_id = #{sessionId}
+    </delete>
 
     <delete id="deleteExpired">
         DELETE FROM chat_record

@@ -23,6 +23,26 @@ const pendingQuestion = ref("");
 const candidateKeyword = ref("");
 const candidateList = ref([]);
 
+const answerPolicyMap = {
+  FIXED_TEMPLATE: "固定模板回答",
+  OUT_OF_SCOPE_REFUSAL: "范围外问题拒答",
+  RAG_MODEL: "知识检索后生成回答",
+  RAG_FALLBACK_NO_KNOWLEDGE: "降级回答",
+  RAG_FALLBACK_MODEL_ERROR: "模型降级回答",
+  REALTIME_ONLY: "仅实时数据回答"
+};
+
+const fallbackReasonMap = {
+  NO_RELEVANT_KNOWLEDGE: "没有足够相关证据",
+  KNOWLEDGE_NOT_READY: "知识库未就绪",
+  EMBEDDING_UNAVAILABLE: "向量服务不可用",
+  RETRIEVAL_UNAVAILABLE: "知识检索不可用",
+  MODEL_UNAVAILABLE: "大模型不可用",
+  OUT_OF_SCOPE: "问题超出服务范围",
+  GREETING: "问候类问题",
+  NO_DISCOVERY_RESULTS: "没有找到匹配商品"
+};
+
 const quickPrompts = computed(() => {
   if (productContext.value) {
     return [
@@ -55,7 +75,7 @@ const currentProductLabel = computed(() => {
   return `${productContext.value.name} · ${typeLabel}`;
 });
 
-const statusCopy = computed(() => latestMeta.value?.answerPolicy || "等待首条问题");
+const statusCopy = computed(() => formatAnswerPolicy(latestMeta.value?.answerPolicy) || "等待首条问题");
 const sourceCount = computed(() => latestMeta.value?.sources?.length || 0);
 const canSend = computed(() => question.value.trim().length > 0 && !sending.value && !resolvingProduct.value);
 
@@ -140,6 +160,14 @@ function formatConfidence(value) {
   return `${Math.round(number * 100)}%`;
 }
 
+function formatAnswerPolicy(value) {
+  return value ? answerPolicyMap[value] || value : "";
+}
+
+function formatFallbackReason(value) {
+  return value ? fallbackReasonMap[value] || value : "无";
+}
+
 function applyPrompt(prompt) {
   question.value = prompt;
 }
@@ -214,9 +242,12 @@ async function sendMessage() {
 async function submitChat(trimmedQuestion, productId) {
   sending.value = true;
   try {
+    const activeProduct = productContext.value?.productId === productId ? productContext.value : null;
     const response = await chatWithAssistant({
       question: trimmedQuestion,
       productId: productId || undefined,
+      productName: activeProduct?.name || undefined,
+      productType: activeProduct?.productType || undefined,
       sessionId: sessionId.value || undefined,
       contextType: productId ? "product-detail" : "global-assistant"
     });
@@ -227,7 +258,7 @@ async function submitChat(trimmedQuestion, productId) {
     pendingQuestion.value = "";
     await loadSession();
   } catch (error) {
-    ElMessage.error(error.message || "AI 响应失败，请稍后重试");
+    ElMessage.error(error.message || "AI 回答失败，请稍后重试");
   } finally {
     sending.value = false;
   }
@@ -253,6 +284,25 @@ async function loadSession() {
   try {
     const session = await getChatSession(sessionId.value);
     records.value = session.records || [];
+
+    const contextState = session.contextState || {};
+    if (contextState.currentProductId) {
+      productContext.value = {
+        productId: contextState.currentProductId,
+        name: contextState.currentProductName || `商品 #${contextState.currentProductId}`,
+        productType: contextState.currentProductType || "normal"
+      };
+    }
+
+    const latestRecord = records.value[records.value.length - 1];
+    if (latestRecord) {
+      latestMeta.value = {
+        answerPolicy: latestRecord.answerPolicy,
+        sources: latestRecord.sources || [],
+        confidence: latestRecord.confidence,
+        fallbackReason: latestRecord.fallbackReason
+      };
+    }
   } catch (error) {
     ElMessage.error(error.message || "会话记录加载失败");
   } finally {
@@ -287,7 +337,7 @@ function resetConversation(clearContext = true) {
     <section class="ai-hero">
       <div class="ai-hero-copy">
         <p class="eyebrow">AI Assistant</p>
-        <h1>商品知识客服工作台</h1>
+        <h1>AI 商品问答</h1>
         <p>
           先按商品名或型号定位商品，再进入问答。你不需要知道商品 ID，也不需要自己查数据库。
           如果命中多个候选商品，系统会先让你确认，尽量避免答非所问。
@@ -366,7 +416,7 @@ function resetConversation(clearContext = true) {
             </div>
             <div>
               <small>回退原因</small>
-              <strong>{{ latestMeta?.fallbackReason || "无" }}</strong>
+              <strong>{{ formatFallbackReason(latestMeta?.fallbackReason) }}</strong>
             </div>
           </div>
         </div>
@@ -442,9 +492,9 @@ function resetConversation(clearContext = true) {
                   <span v-for="source in message.sources" :key="source">{{ source }}</span>
                 </div>
                 <div class="ai-message-meta">
-                  <small>策略 {{ message.answerPolicy || "--" }}</small>
+                  <small>策略 {{ formatAnswerPolicy(message.answerPolicy) || "--" }}</small>
                   <small>置信度 {{ formatConfidence(message.confidence) }}</small>
-                  <small v-if="message.fallbackReason">回退 {{ message.fallbackReason }}</small>
+                  <small v-if="message.fallbackReason">回退 {{ formatFallbackReason(message.fallbackReason) }}</small>
                 </div>
               </template>
             </div>
