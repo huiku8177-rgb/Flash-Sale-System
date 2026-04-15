@@ -7,6 +7,7 @@ import com.flashsale.seckillservice.domain.dto.SeckillProductQueryDTO;
 import com.flashsale.seckillservice.domain.po.SeckillProductPO;
 import com.flashsale.seckillservice.domain.vo.SeckillProductVO;
 import com.flashsale.seckillservice.mapper.SeckillProductMapper;
+import com.flashsale.seckillservice.service.SeckillProductCacheService;
 import com.flashsale.seckillservice.service.SeckillProductService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,13 +15,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-/**
- * @author strive_qin
- * @version 1.0
- * @description SeckillProductServiceImpl
- * @date 2026/3/20 00:00
- */
-
 
 @Service
 @RequiredArgsConstructor
@@ -29,56 +23,55 @@ public class SeckillProductServiceImpl implements SeckillProductService {
 
     private final SeckillProductMapper seckillProductMapper;
     private final StringRedisTemplate stringRedisTemplate;
+    private final SeckillProductCacheService seckillProductCacheService;
 
-    /**
-     * 查询秒杀商品列表
-     *
-     * @param queryDTO 查询参数
-     * @return 商品列表
-     */
     @Override
     public Result<List<SeckillProductVO>> listProducts(SeckillProductQueryDTO queryDTO) {
         if (queryDTO == null) {
             queryDTO = new SeckillProductQueryDTO();
         }
-        // 默认只查询启用中的秒杀商品
         if (queryDTO.getStatus() == null) {
             queryDTO.setStatus(1);
         }
-        return Result.success(seckillProductMapper.listProducts(queryDTO));
+
+        List<SeckillProductVO> cached = seckillProductCacheService.getProductList(queryDTO);
+        if (cached != null) {
+            return Result.success(cached);
+        }
+
+        List<SeckillProductVO> products = seckillProductMapper.listProducts(queryDTO);
+        seckillProductCacheService.cacheProductList(queryDTO, products);
+        return Result.success(seckillProductCacheService.applyRealtimeStock(products));
     }
 
-    /**
-     * 查询秒杀商品详情
-     *
-     * @param id 商品ID
-     * @return 商品详情
-     */
     @Override
     public Result<SeckillProductVO> getProductDetail(Long id) {
         if (id == null) {
             return Result.error(ResultCode.PARAM_ERROR, "商品ID不能为空");
         }
+
+        SeckillProductVO cached = seckillProductCacheService.getProductDetail(id);
+        if (cached != null) {
+            return Result.success(cached);
+        }
+
         SeckillProductVO product = seckillProductMapper.getProductDetail(id);
         if (product == null) {
             return Result.error(ResultCode.BUSINESS_ERROR, "秒杀商品不存在");
         }
-        return Result.success(product);
+
+        seckillProductCacheService.cacheProductDetail(product);
+        return Result.success(seckillProductCacheService.applyRealtimeStock(product));
     }
 
-    /**
-     * 启动时将秒杀库存同步到 Redis
-     */
     @Override
     public void loadStockToRedis() {
         List<SeckillProductPO> products = seckillProductMapper.listAll();
-
         if (products == null || products.isEmpty()) {
             log.warn("没有需要预热的秒杀商品库存");
             return;
         }
 
-        // 按商品维度初始化 Redis 库存键
         for (SeckillProductPO product : products) {
             String key = RedisKeys.seckillStock(product.getId());
             stringRedisTemplate.opsForValue().set(key, String.valueOf(product.getStock()));

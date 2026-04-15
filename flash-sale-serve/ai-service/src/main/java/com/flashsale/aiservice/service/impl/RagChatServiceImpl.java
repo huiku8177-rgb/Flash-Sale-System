@@ -606,6 +606,7 @@ public class RagChatServiceImpl implements RagChatService {
   private QuestionIntentType classifyIntent(String question, String contextType, Long productId, ConversationContextState contextState) {
     String normalizedQuestion = normalize(question);
     boolean hasProductContext = hasProductContext(contextType, productId, contextState);
+    boolean knownProductMention = mentionsKnownProduct(normalizedQuestion);
 
     // 问候或身份询问
     if (isAssistantIdentityQuestion(normalizedQuestion) || isGreetingOnly(normalizedQuestion)) {
@@ -626,7 +627,7 @@ public class RagChatServiceImpl implements RagChatService {
     }
     // 实时状态
     if (containsAny(normalizedQuestion, TERM_INVENTORY, TERM_AVAILABLE, TERM_PRICE, TERM_HOW_MUCH, TERM_SECKILL_PRICE,
-      TERM_SECKILL, TERM_ACTIVITY, TERM_START, TERM_END)) {
+      TERM_SECKILL, TERM_ACTIVITY, TERM_START, TERM_END) && (hasProductContext || knownProductMention)) {
       return QuestionIntentType.REALTIME_STATUS;
     }
     // 商品发现
@@ -638,7 +639,7 @@ public class RagChatServiceImpl implements RagChatService {
       return QuestionIntentType.OUT_OF_SCOPE;
     }
     // 商品事实问答
-    if (hasBusinessSignals(normalizedQuestion) || hasProductContext || mentionsKnownProduct(normalizedQuestion)) {
+    if (hasBusinessSignals(normalizedQuestion) || hasProductContext || knownProductMention) {
       return QuestionIntentType.PRODUCT_FACT;
     }
 

@@ -3,6 +3,7 @@ package com.flashsale.gateway.filters;
 import cn.hutool.core.text.AntPathMatcher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.flashsale.common.domain.ResultCode;
+import com.flashsale.common.redis.RedisKeys;
 import com.flashsale.gateway.config.RateLimitProperties;
 import com.flashsale.gateway.support.GatewayResponseWriter;
 import lombok.RequiredArgsConstructor;
@@ -10,38 +11,31 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.net.InetSocketAddress;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * 对敏感入口做轻量级限流。
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class RateLimitGlobalFilter implements GlobalFilter, Ordered {
 
-    private static final int CLEANUP_INTERVAL = 200;
-
     private final RateLimitProperties rateLimitProperties;
     private final ObjectMapper objectMapper;
+    private final ReactiveStringRedisTemplate reactiveStringRedisTemplate;
     private final AntPathMatcher antPathMatcher = new AntPathMatcher();
-    private final Map<String, WindowCounter> counters = new ConcurrentHashMap<>();
-    private final AtomicLong requestCounter = new AtomicLong();
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -60,46 +54,61 @@ public class RateLimitGlobalFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        cleanupExpiredCounters();
-
-        long now = Instant.now().toEpochMilli();
-        long windowMillis = Math.max(matchedRule.getWindowSeconds(), 1) * 1000L;
+        long nowEpochSeconds = Instant.now().getEpochSecond();
+        long windowSeconds = Math.max(matchedRule.getWindowSeconds(), 1L);
+        long windowStartEpochSeconds = (nowEpochSeconds / windowSeconds) * windowSeconds;
+        long resetEpochSeconds = windowStartEpochSeconds + windowSeconds;
+        long expireSeconds = Math.max(1L, resetEpochSeconds - nowEpochSeconds);
         String clientKey = resolveClientKey(request);
-        String counterKey = matchedRule.getId() + ":" + clientKey;
+        String redisKey = RedisKeys.gatewayRateLimit(matchedRule.getId(), clientKey, windowStartEpochSeconds);
 
-        WindowCounter counter = counters.compute(counterKey, (key, current) -> {
-            if (current == null || current.expiresAt <= now) {
-                return new WindowCounter(now + windowMillis, 1);
-            }
-            current.count.incrementAndGet();
-            return current;
-        });
+        return incrementCounter(redisKey, expireSeconds)
+                .flatMap(currentCount -> {
+                    applyRateLimitHeaders(exchange.getResponse(), matchedRule, currentCount, resetEpochSeconds);
+                    if (currentCount > matchedRule.getMaxRequests()) {
+                        exchange.getResponse().getHeaders().set("Retry-After", String.valueOf(expireSeconds));
+                        log.warn("gateway rate limited: rule={}, clientKey={}, method={}, path={}",
+                                matchedRule.getId(), clientKey, method, request.getPath().value());
+                        return GatewayResponseWriter.writeError(
+                                exchange.getResponse(),
+                                objectMapper,
+                                HttpStatus.TOO_MANY_REQUESTS,
+                                ResultCode.TOO_MANY_REQUESTS,
+                                "Too many requests"
+                        );
+                    }
+                    return chain.filter(exchange);
+                })
+                .onErrorResume(ex -> {
+                    log.warn("gateway rate-limit fallback to pass-through: rule={}, clientKey={}, method={}, path={}",
+                            matchedRule.getId(), clientKey, method, request.getPath().value(), ex);
+                    return chain.filter(exchange);
+                });
+    }
 
-        int currentCount = counter.count.get();
-        long retryAfterSeconds = Math.max(1, (counter.expiresAt - now + 999) / 1000);
+    private Mono<Long> incrementCounter(String redisKey, long expireSeconds) {
+        return reactiveStringRedisTemplate.opsForValue()
+                .increment(redisKey)
+                .flatMap(currentCount -> {
+                    if (currentCount == null) {
+                        return Mono.just(0L);
+                    }
+                    if (currentCount == 1L) {
+                        return reactiveStringRedisTemplate.expire(redisKey, Duration.ofSeconds(expireSeconds))
+                                .thenReturn(currentCount);
+                    }
+                    return Mono.just(currentCount);
+                });
+    }
 
-        ServerHttpResponse response = exchange.getResponse();
-        response.getHeaders().set("X-RateLimit-Limit", String.valueOf(matchedRule.getMaxRequests()));
-        response.getHeaders().set("X-RateLimit-Remaining", String.valueOf(Math.max(0, matchedRule.getMaxRequests() - currentCount)));
-        response.getHeaders().set("X-RateLimit-Reset", String.valueOf(counter.expiresAt / 1000));
-
-        if (currentCount > matchedRule.getMaxRequests()) {
-            response.getHeaders().set("Retry-After", String.valueOf(retryAfterSeconds));
-            log.warn("gateway rate limited: rule={}, clientKey={}, method={}, path={}",
-                    matchedRule.getId(),
-                    clientKey,
-                    method,
-                    request.getPath().value());
-            return GatewayResponseWriter.writeError(
-                    response,
-                    objectMapper,
-                    HttpStatus.TOO_MANY_REQUESTS,
-                    ResultCode.TOO_MANY_REQUESTS,
-                    "请求过于频繁，请稍后再试"
-            );
-        }
-
-        return chain.filter(exchange);
+    private void applyRateLimitHeaders(ServerHttpResponse response,
+                                       RateLimitProperties.Rule rule,
+                                       long currentCount,
+                                       long resetEpochSeconds) {
+        response.getHeaders().set("X-RateLimit-Limit", String.valueOf(rule.getMaxRequests()));
+        response.getHeaders().set("X-RateLimit-Remaining",
+                String.valueOf(Math.max(0L, rule.getMaxRequests() - currentCount)));
+        response.getHeaders().set("X-RateLimit-Reset", String.valueOf(resetEpochSeconds));
     }
 
     private RateLimitProperties.Rule findMatchedRule(HttpMethod method, String path) {
@@ -108,17 +117,16 @@ public class RateLimitGlobalFilter implements GlobalFilter, Ordered {
             return null;
         }
         for (RateLimitProperties.Rule rule : rules) {
-            if (rule == null || rule.getPath() == null || rule.getPath().isBlank()) {
+            if (rule == null || !StringUtils.hasText(rule.getPath())) {
                 continue;
             }
             boolean pathMatched = antPathMatcher.match(rule.getPath().trim(), path);
-            boolean methodMatched = rule.getMethod() == null
-                    || rule.getMethod().isBlank()
+            boolean methodMatched = !StringUtils.hasText(rule.getMethod())
                     || (method != null && method.name().equals(rule.getMethod().trim().toUpperCase(Locale.ROOT)));
             boolean validLimit = rule.getMaxRequests() > 0 && rule.getWindowSeconds() > 0;
             if (pathMatched && methodMatched && validLimit) {
-                if (rule.getId() == null || rule.getId().isBlank()) {
-                    rule.setId((rule.getMethod() == null ? "ANY" : rule.getMethod()) + ":" + rule.getPath());
+                if (!StringUtils.hasText(rule.getId())) {
+                    rule.setId((StringUtils.hasText(rule.getMethod()) ? rule.getMethod() : "ANY") + ":" + rule.getPath());
                 }
                 return rule;
             }
@@ -126,20 +134,13 @@ public class RateLimitGlobalFilter implements GlobalFilter, Ordered {
         return null;
     }
 
-    private void cleanupExpiredCounters() {
-        if (requestCounter.incrementAndGet() % CLEANUP_INTERVAL != 0) {
-            return;
-        }
-        long now = Instant.now().toEpochMilli();
-        counters.entrySet().removeIf(entry -> entry.getValue().expiresAt <= now);
-    }
-
     private String resolveClientKey(ServerHttpRequest request) {
         String forwardedFor = request.getHeaders().getFirst("X-Forwarded-For");
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
+        if (StringUtils.hasText(forwardedFor)) {
             int commaIndex = forwardedFor.indexOf(',');
             return commaIndex >= 0 ? forwardedFor.substring(0, commaIndex).trim() : forwardedFor.trim();
         }
+
         InetSocketAddress remoteAddress = request.getRemoteAddress();
         if (remoteAddress != null && remoteAddress.getAddress() != null) {
             return remoteAddress.getAddress().getHostAddress();
@@ -150,15 +151,5 @@ public class RateLimitGlobalFilter implements GlobalFilter, Ordered {
     @Override
     public int getOrder() {
         return -100;
-    }
-
-    private static final class WindowCounter {
-        private final long expiresAt;
-        private final AtomicInteger count;
-
-        private WindowCounter(long expiresAt, int initialCount) {
-            this.expiresAt = expiresAt;
-            this.count = new AtomicInteger(initialCount);
-        }
     }
 }

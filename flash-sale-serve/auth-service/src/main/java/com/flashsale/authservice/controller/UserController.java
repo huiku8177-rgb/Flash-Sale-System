@@ -17,6 +17,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -86,8 +87,10 @@ public class UserController {
     @Operation(summary = "退出登录")
     @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/logout")
-    public Result<String> logout() {
-        log.info("logout request received");
+    public Result<String> logout(@Parameter(hidden = true) @RequestHeader("X-User-Id") Long userId,
+                                 @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) {
+        log.info("logout request received, userId={}", userId);
+        userService.logout(userId, authorization);
         return Result.success("退出登录成功");
     }
 

@@ -65,12 +65,14 @@ Nacos 有两个能力：
 - `product-service.yaml`
 - `order-service.yaml`
 - `seckill-service.yaml`
+- `ai-service.yaml`
 
 这里放各服务独有的内容，比如：
 
 - gateway 路由、鉴权白名单、限流
 - order 定时任务参数
 - seckill 预热和 MQ 路由参数
+- ai-service 模型地址、模型名称、检索参数、规则文档和 SpringDoc 文档开关
 
 ## 推荐接入步骤
 
@@ -141,6 +143,7 @@ spring:
 - `product-service.yaml`
 - `order-service.yaml`
 - `seckill-service.yaml`
+- `ai-service.yaml`
 
 推荐统一：
 
@@ -154,9 +157,45 @@ spring:
 
 1. 先把 MySQL、Redis、RabbitMQ 搬到 Nacos
 2. 再把 JWT 和通用超时参数搬到 Nacos
-3. 最后再搬 gateway 路由、限流、秒杀参数这类业务配置
+3. 最后再搬 gateway 路由、限流、秒杀参数、AI 模型参数这类业务配置
 
 这样即使中途有问题，也比较容易定位。
+
+## Swagger / OpenAPI 聚合说明
+
+当前网关聚合 Swagger 文档，推荐在 `gateway.yaml` 中维护：
+
+- `/v3/api-docs/auth-service` -> `auth-service`
+- `/v3/api-docs/product-service` -> `product-service`
+- `/v3/api-docs/seckill-service` -> `seckill-service`
+- `/v3/api-docs/order-service` -> `order-service`
+- `/v3/api-docs/ai-service` -> `ai-service`
+
+网关聚合入口：
+
+- `http://localhost:8080/swagger-ui.html`
+
+AI 服务直连入口：
+
+- `http://localhost:8085/swagger-ui.html`
+- `http://localhost:8085/v3/api-docs`
+
+网关鉴权白名单需要包含：
+
+- `/swagger-ui.html`
+- `/swagger-ui/**`
+- `/v3/api-docs`
+- `/v3/api-docs/**`
+
+`ai-service.yaml` 中需要开启：
+
+```yaml
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+```
 
 ## 当前项目最适合的落地方式
 
@@ -167,7 +206,7 @@ spring:
 
 等你确认 Nacos 配置中心也要正式启用时，再做下一步代码改造：
 
-- 给 5 个服务加 `nacos-config` 依赖
+- 给 6 个服务加 `nacos-config` 依赖
 - 把共享配置 Data ID 建起来
 - 再把各服务的本地业务配置逐步迁过去
 
@@ -175,6 +214,6 @@ spring:
 
 如果你要我继续帮你落地，我建议按这个顺序：
 
-1. 我先帮你把 5 个服务补上 `spring-cloud-starter-alibaba-nacos-config`
+1. 我先帮你把 6 个服务补上 `spring-cloud-starter-alibaba-nacos-config`
 2. 再把 `application.yml` 改成支持 `spring.config.import`
 3. 最后我帮你生成一套可直接导入 Nacos 的 YAML 模板

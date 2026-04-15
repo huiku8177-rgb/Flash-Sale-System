@@ -1,6 +1,8 @@
 springdoc:
   api-docs:
     enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
 
 ai:
   base-url: https://dashscope.aliyuncs.com/compatible-mode/

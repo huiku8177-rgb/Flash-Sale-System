@@ -7,6 +7,7 @@ import com.flashsale.authservice.domain.dto.UpdatePasswordRequestDTO;
 import com.flashsale.authservice.domain.po.User;
 import com.flashsale.authservice.domain.vo.UserVO;
 import com.flashsale.authservice.mapper.UserMapper;
+import com.flashsale.authservice.service.AuthSessionService;
 import com.flashsale.authservice.service.UserService;
 import com.flashsale.common.domain.ResultCode;
 import com.flashsale.common.exception.CommonException;
@@ -20,12 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description UserServiceImpl
- * @date 2026/3/20 00:00
- */
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -35,6 +30,7 @@ public class UserServiceImpl implements UserService {
     private final JwtTool jwtTool;
     private final JwtProperties jwtProperties;
     private final PasswordEncoder passwordEncoder;
+    private final AuthSessionService authSessionService;
 
     @Override
     public UserVO login(LoginRequestDTO requestDTO) {
@@ -50,8 +46,9 @@ public class UserServiceImpl implements UserService {
             throw unauthorized("用户名或密码错误");
         }
 
+        long tokenVersion = authSessionService.getCurrentTokenVersion(user.getId());
         UserVO userVO = buildUserVO(user);
-        userVO.setToken(jwtTool.createToken(user.getId(), jwtProperties.getTokenTTL()));
+        userVO.setToken(jwtTool.createToken(user.getId(), jwtProperties.getTokenTTL(), tokenVersion));
         return userVO;
     }
 
@@ -77,7 +74,7 @@ public class UserServiceImpl implements UserService {
         try {
             userMapper.insert(user);
         } catch (DuplicateKeyException ex) {
-            log.warn("注册并发冲突，用户名已存在: {}", username);
+            log.warn("注册并发冲突，用户名已存在 {}", username);
             throw businessError("用户名已存在");
         }
     }
@@ -92,6 +89,12 @@ public class UserServiceImpl implements UserService {
         }
 
         return buildUserVO(user);
+    }
+
+    @Override
+    public void logout(Long userId, String authorization) {
+        requireAuthenticated(userId);
+        authSessionService.blacklistToken(userId, authorization, jwtProperties.getTokenTTL());
     }
 
     @Override
@@ -121,6 +124,7 @@ public class UserServiceImpl implements UserService {
 
         user.setPassword(passwordEncoder.encode(requestDTO.getNewPassword()));
         userMapper.updateUser(user);
+        authSessionService.incrementTokenVersion(userId);
         log.info("用户修改密码: userId={}", userId);
     }
 
@@ -155,5 +159,5 @@ public class UserServiceImpl implements UserService {
 
     private UnauthorizedException unauthorized(String message) {
         return new UnauthorizedException(message);
-     }
+    }
 }

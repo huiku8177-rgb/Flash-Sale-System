@@ -15,6 +15,9 @@ seckill:
 
 flash-sale:
   seckill:
+    cache:
+      list-ttl-seconds: 30
+      detail-ttl-seconds: 30
     result-buffer-seconds: 600
     default-result-ttl-seconds: 3600
     mq:

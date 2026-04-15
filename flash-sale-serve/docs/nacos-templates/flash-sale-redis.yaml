@@ -1,6 +1,25 @@
 spring:
   data:
     redis:
-      host: 192.168.100.130
-      port: 6379
-      password: 123321
+      host: ${FLASH_SALE_REDIS_HOST:192.168.100.130}
+      port: ${FLASH_SALE_REDIS_PORT:6379}
+      password: ${FLASH_SALE_REDIS_PASSWORD:123321}
+      database: ${FLASH_SALE_REDIS_DATABASE:0}
+      timeout: ${FLASH_SALE_REDIS_TIMEOUT:3s}
+      connect-timeout: ${FLASH_SALE_REDIS_CONNECT_TIMEOUT:3s}
+      lettuce:
+        pool:
+          max-active: ${FLASH_SALE_REDIS_POOL_MAX_ACTIVE:16}
+          max-idle: ${FLASH_SALE_REDIS_POOL_MAX_IDLE:8}
+          min-idle: ${FLASH_SALE_REDIS_POOL_MIN_IDLE:2}
+          max-wait: ${FLASH_SALE_REDIS_POOL_MAX_WAIT:3s}
+---
+spring:
+  config:
+    activate:
+      on-profile: redis-sentinel
+  data:
+    redis:
+      sentinel:
+        master: ${FLASH_SALE_REDIS_SENTINEL_MASTER}
+        nodes: ${FLASH_SALE_REDIS_SENTINEL_NODES}

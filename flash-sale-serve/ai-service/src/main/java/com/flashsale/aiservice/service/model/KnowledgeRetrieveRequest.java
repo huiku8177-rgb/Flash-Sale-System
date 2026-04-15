@@ -17,5 +17,7 @@ public class KnowledgeRetrieveRequest {
     private QuestionIntentType intentType;
     private Long currentProductId;
     private String currentProductName;
+    private String currentProductType;
     private List<Long> compareCandidateIds = new ArrayList<>();
+    private List<String> compareCandidateKeys = new ArrayList<>();
 }

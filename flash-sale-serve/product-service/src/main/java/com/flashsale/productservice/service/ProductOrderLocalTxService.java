@@ -11,14 +11,6 @@ import org.springframework.util.CollectionUtils;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 普通下单本地事务处理服务
- *
- * @author strive_qin
- * @version 1.0
- * @description ProductOrderLocalTxService
- * @date 2026/3/23 00:00
- */
 @Service
 @RequiredArgsConstructor
 public class ProductOrderLocalTxService {
@@ -27,6 +19,7 @@ public class ProductOrderLocalTxService {
 
     private final ProductMapper productMapper;
     private final CartMapper cartMapper;
+    private final ProductReadCacheService productReadCacheService;
 
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRES_NEW)
     public void reserveStock(Map<Long, Integer> mergedItems) {
@@ -36,6 +29,7 @@ public class ProductOrderLocalTxService {
                 throw new IllegalStateException("扣减普通商品库存失败，商品ID=" + entry.getKey());
             }
         }
+        productReadCacheService.evictProductCaches(mergedItems.keySet());
     }
 
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRES_NEW)
@@ -43,6 +37,7 @@ public class ProductOrderLocalTxService {
         for (Map.Entry<Long, Integer> entry : mergedItems.entrySet()) {
             productMapper.increaseStock(entry.getKey(), entry.getValue());
         }
+        productReadCacheService.evictProductCaches(mergedItems.keySet());
     }
 
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRES_NEW)
@@ -51,6 +46,7 @@ public class ProductOrderLocalTxService {
             return;
         }
         cartMapper.deleteCartItemsByIds(userId, cartItemIds);
+        productReadCacheService.evictCartItems(userId);
     }
 
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRES_NEW)
@@ -59,5 +55,6 @@ public class ProductOrderLocalTxService {
             return;
         }
         cartMapper.updateSelectedByIds(userId, cartItemIds, UNSELECTED);
+        productReadCacheService.evictCartItems(userId);
     }
 }

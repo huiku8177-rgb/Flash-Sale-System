@@ -12,6 +12,7 @@ Browser
       -> product-service
       -> seckill-service
       -> order-service
+      -> ai-service
 
 product-service
   -> OpenFeign
@@ -131,6 +132,27 @@ seckill-service
 - Redis Key 与状态常量
 - 通用 Web 头部常量
 
+### 2.7 ai-service
+
+职责：
+
+- 商品知识问答
+- 多轮会话管理
+- 自然语言商品候选解析
+- 商品与规则知识同步
+- 知识库统计与同步任务查询
+- SpringDoc OpenAPI 文档输出，供 Gateway 聚合
+
+当前对外路径：
+
+- `/ai/chat`
+- `/ai/chat/sessions`
+- `/ai/chat/sessions/{sessionId}`
+- `/ai/chat/resolve-product`
+- `/ai/knowledge/sync`
+- `/ai/knowledge/sync/{taskId}`
+- `/ai/knowledge/stats`
+
 ## 3. 外部接口与内部接口分层
 
 ### 3.1 外部接口
@@ -144,6 +166,19 @@ seckill-service
 - `/seckill/**` -> `seckill-service`
 - `/seckill-product/**` -> `seckill-service`
 - `/order/**` -> `order-service`
+- `/ai/**` -> `ai-service`
+
+Swagger/OpenAPI 聚合路由：
+
+- `/v3/api-docs/auth-service` -> `auth-service`
+- `/v3/api-docs/product-service` -> `product-service`
+- `/v3/api-docs/seckill-service` -> `seckill-service`
+- `/v3/api-docs/order-service` -> `order-service`
+- `/v3/api-docs/ai-service` -> `ai-service`
+
+Swagger 聚合入口：
+
+- `http://localhost:8080/swagger-ui.html`
 
 ### 3.2 内部接口
 
@@ -202,6 +237,7 @@ X-User-Id: <userId>
 - `/v3/api-docs/**`
 - `/error`
 - `/favicon.ico`
+- `GET:/ai/health`
 
 ## 5. 统一响应规范
 
@@ -272,6 +308,22 @@ X-User-Id: <userId>
 - `POST /order/seckill-orders/{id}/pay`
 - `POST /order/seckill-orders/{id}/cancel`
 - `GET /order/seckill-orders/{id}/pay-status`
+
+### 6.6 AI 问答与知识库
+
+- `POST /ai/chat`
+- `GET /ai/chat/sessions`
+- `GET /ai/chat/sessions/{sessionId}`
+- `DELETE /ai/chat/sessions/{sessionId}`
+- `POST /ai/chat/resolve-product`
+- `POST /ai/knowledge/sync`
+- `GET /ai/knowledge/sync/{taskId}`
+- `GET /ai/knowledge/stats`
+
+说明：
+
+- `productType` 用于区分普通商品与秒杀商品，推荐前端在商品详情页提问时与 `productId` 一并传入
+- 网关文档入口中 AI 分组对应 `/v3/api-docs/ai-service`
 
 ## 7. 两条核心业务链路
 
@@ -346,6 +398,7 @@ X-User-Id: <userId>
 - `product-service.yaml`
 - `order-service.yaml`
 - `seckill-service.yaml`
+- `ai-service.yaml`
 
 扩展共享配置可使用：
 

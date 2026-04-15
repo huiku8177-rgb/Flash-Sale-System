@@ -119,18 +119,56 @@ public class EmbeddingClient {
 
       List<Double> embedding = response.getData().get(0).getEmbedding();
       if (embedding == null || embedding.isEmpty()) {
-        return EmbeddingResult.failure(REASON_EMPTY_RESPONSE, "Embedding vector is empty", null);
+        return fallbackToLocalIfAllowed(
+          text,
+          REASON_EMPTY_RESPONSE,
+          "Embedding vector is empty"
+        );
       }
 
       log.info("Embedding model invocation succeeded, model={}, dimensions={}", aiProperties.getEmbeddingModel(), embedding.size());
       return EmbeddingResult.success(embedding, false, null, null);
     } catch (WebClientResponseException e) {
       log.error("Embedding API error, status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString());
-      return EmbeddingResult.failure(REASON_HTTP_ERROR, "Embedding API HTTP " + e.getStatusCode(), e);
+      return fallbackToLocalIfAllowed(
+        text,
+        REASON_HTTP_ERROR,
+        "Embedding API HTTP " + e.getStatusCode(),
+        e
+      );
     } catch (Exception e) {
       log.error("Failed to call embedding API: {}", e.getMessage(), e);
-      return EmbeddingResult.failure(REASON_CLIENT_ERROR, "Failed to call embedding API: " + e.getMessage(), e);
+      return fallbackToLocalIfAllowed(
+        text,
+        REASON_CLIENT_ERROR,
+        "Failed to call embedding API: " + e.getMessage(),
+        e
+      );
     }
+  }
+
+  private EmbeddingResult fallbackToLocalIfAllowed(String text, String remoteReason, String remoteMessage) {
+    return fallbackToLocalIfAllowed(text, remoteReason, remoteMessage, null);
+  }
+
+  private EmbeddingResult fallbackToLocalIfAllowed(String text, String remoteReason, String remoteMessage, Throwable error) {
+    if (isLocalEmbeddingFallbackAllowed()) {
+      if (LOCAL_FALLBACK_WARNED.compareAndSet(false, true)) {
+        log.warn(
+          "Embedding remote invocation failed, activeProfiles={}, system will use local embedding fallback, remoteReason={}, remoteMessage={}",
+          activeProfilesSummary(),
+          remoteReason,
+          remoteMessage
+        );
+      }
+      return EmbeddingResult.success(
+        localEmbedding(text),
+        true,
+        REASON_LOCAL_FALLBACK,
+        "Local embedding fallback was used after remote failure: " + remoteReason
+      );
+    }
+    return EmbeddingResult.failure(remoteReason, remoteMessage, error);
   }
 
   /**

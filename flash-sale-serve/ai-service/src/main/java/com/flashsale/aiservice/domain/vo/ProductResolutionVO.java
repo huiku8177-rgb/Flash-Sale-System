@@ -12,7 +12,7 @@ public class ProductResolutionVO {
     @Schema(description = "解析出的搜索关键词", example = "iphone")
     private String keyword;
 
-    @Schema(description = "是否已自动定位到唯一商品")
+    @Schema(description = "是否已自动定位到唯一商品", example = "false")
     private boolean resolved;
 
     @Schema(description = "自动定位到的商品")

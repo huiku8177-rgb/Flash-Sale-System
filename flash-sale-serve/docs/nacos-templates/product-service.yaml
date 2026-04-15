@@ -17,3 +17,11 @@ mybatis:
 springdoc:
   api-docs:
     path: /v3/api-docs
+
+flash-sale:
+  cache:
+    product:
+      list-ttl-seconds: 60
+      detail-ttl-seconds: 60
+    cart:
+      ttl-seconds: 120

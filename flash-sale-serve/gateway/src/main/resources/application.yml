@@ -6,6 +6,7 @@ spring:
   config:
     import:
       - optional:nacos:flash-sale-common.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
+      - optional:nacos:flash-sale-redis.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
       - optional:nacos:flash-sale-jwt.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
       - optional:nacos:${spring.application.name}.yaml?group=${FLASH_SALE_NACOS_GROUP:FLASH_SALE}
   cloud:

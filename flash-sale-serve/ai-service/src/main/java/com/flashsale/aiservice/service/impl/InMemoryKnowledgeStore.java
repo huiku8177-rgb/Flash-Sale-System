@@ -118,6 +118,10 @@ public class InMemoryKnowledgeStore {
     return knowledgeReady;
   }
 
+  public boolean hasKnowledgeSnapshot() {
+    return !chunks.isEmpty();
+  }
+
   /**
    * 标记知识库为未就绪状态（通常在同步失败时调用）
    *
@@ -127,6 +131,15 @@ public class InMemoryKnowledgeStore {
     knowledgeReady = false;
     lastSyncStatus = "NOT_READY";
     lastSyncMessage = message;
+  }
+
+  public void markSyncFailed(String message) {
+    if (hasKnowledgeSnapshot()) {
+      lastSyncStatus = "STALE_READY";
+      lastSyncMessage = message;
+      return;
+    }
+    markKnowledgeNotReady(message);
   }
 
   /**

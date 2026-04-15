@@ -16,6 +16,7 @@ import com.flashsale.productservice.domain.vo.UserAddressVO;
 import com.flashsale.productservice.mapper.CartMapper;
 import com.flashsale.productservice.mapper.ProductMapper;
 import com.flashsale.productservice.service.ProductOrderLocalTxService;
+import com.flashsale.productservice.service.ProductReadCacheService;
 import com.flashsale.productservice.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,12 +32,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description ProductServiceImpl
- * @date 2026/3/20 00:00
- */
 @Service
 @Slf4j
 @Validated
@@ -50,18 +45,25 @@ public class ProductServiceImpl implements ProductService {
     private final OrderInternalClient orderInternalClient;
     private final AuthAddressClient authAddressClient;
     private final ProductOrderLocalTxService productOrderLocalTxService;
+    private final ProductReadCacheService productReadCacheService;
 
     @Override
     public Result<List<ProductVO>> listProducts(ProductQueryDTO queryDTO) {
         if (queryDTO == null) {
             queryDTO = new ProductQueryDTO();
         }
-
         if (queryDTO.getStatus() == null) {
             queryDTO.setStatus(PRODUCT_ENABLED);
         }
 
-        return Result.success(productMapper.listProducts(queryDTO));
+        List<ProductVO> cached = productReadCacheService.getProductList(queryDTO);
+        if (cached != null) {
+            return Result.success(cached);
+        }
+
+        List<ProductVO> products = productMapper.listProducts(queryDTO);
+        productReadCacheService.cacheProductList(queryDTO, products);
+        return Result.success(products);
     }
 
     @Override
@@ -71,11 +73,17 @@ public class ProductServiceImpl implements ProductService {
             return Result.error(ResultCode.PARAM_ERROR, "商品ID不能为空");
         }
 
+        ProductVO cached = productReadCacheService.getProductDetail(id);
+        if (cached != null) {
+            return Result.success(cached);
+        }
+
         ProductVO product = productMapper.getProductDetail(id);
         if (product == null) {
             return Result.error(ResultCode.BUSINESS_ERROR, "商品不存在");
         }
 
+        productReadCacheService.cacheProductDetail(product);
         return Result.success(product);
     }
 
@@ -142,7 +150,6 @@ public class ProductServiceImpl implements ProductService {
             return Result.error(ResultCode.PARAM_ERROR, "请至少勾选一件购物车商品");
         }
 
-        // 先在商品服务本地事务里预占库存，避免远程建单成功前库存已被并发抢空。
         try {
             productOrderLocalTxService.reserveStock(mergedItems);
         } catch (Exception ex) {
@@ -163,7 +170,6 @@ public class ProductServiceImpl implements ProductService {
         requestDTO.setItems(orderItems);
 
         try {
-            // 远程建单成功后再清理购物车；如果请求超时，则优先按 orderNo 回查兜底，避免重复建单。
             Result<NormalOrderVO> createResult = orderInternalClient.createNormalOrder(requestDTO);
             if (isSuccess(createResult)) {
                 cleanupCheckedOutCartItems(userId, cartItemIds, orderNo);
@@ -219,7 +225,8 @@ public class ProductServiceImpl implements ProductService {
         try {
             productOrderLocalTxService.removeCheckedOutCartItems(userId, cartItemIds);
         } catch (Exception ex) {
-            log.error("普通订单创建成功后删除购物车失败，userId={}, orderNo={}, cartItemIds={}", userId, orderNo, cartItemIds, ex);
+            log.error("普通订单创建成功后删除购物车失败，userId={}, orderNo={}, cartItemIds={}",
+                    userId, orderNo, cartItemIds, ex);
             try {
                 productOrderLocalTxService.unselectCartItems(userId, cartItemIds);
             } catch (Exception secondaryEx) {

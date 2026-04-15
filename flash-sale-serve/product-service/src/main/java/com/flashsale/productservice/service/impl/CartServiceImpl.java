@@ -10,6 +10,7 @@ import com.flashsale.productservice.domain.vo.ProductVO;
 import com.flashsale.productservice.mapper.CartMapper;
 import com.flashsale.productservice.mapper.ProductMapper;
 import com.flashsale.productservice.service.CartService;
+import com.flashsale.productservice.service.ProductReadCacheService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,12 +20,6 @@ import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
 
-/**
- * @author strive_qin
- * @version 1.0
- * @description CartServiceImpl
- * @date 2026/3/22 00:00
- */
 @Service
 @Slf4j
 @Validated
@@ -37,6 +32,7 @@ public class CartServiceImpl implements CartService {
 
     private final CartMapper cartMapper;
     private final ProductMapper productMapper;
+    private final ProductReadCacheService productReadCacheService;
 
     @Override
     public Result<List<CartItemVO>> listCartItems(Long userId) {
@@ -44,10 +40,18 @@ public class CartServiceImpl implements CartService {
             return Result.error(ResultCode.UNAUTHORIZED);
         }
 
+        List<CartItemVO> cached = productReadCacheService.getCartItems(userId);
+        if (cached != null) {
+            return Result.success(cached);
+        }
+
         List<CartItemVO> cartItems = cartMapper.listCartItems(userId);
         if (CollectionUtils.isEmpty(cartItems)) {
+            productReadCacheService.cacheCartItems(userId, List.of());
             return Result.success(List.of());
         }
+
+        productReadCacheService.cacheCartItems(userId, cartItems);
         return Result.success(cartItems);
     }
 
@@ -80,6 +84,7 @@ public class CartServiceImpl implements CartService {
         }
 
         Integer selected = toSelectedValue(requestDTO.getSelected(), existingItem == null ? SELECTED : existingItem.getSelected());
+        CartItemVO result;
         if (existingItem == null) {
             CartItemPO cartItem = new CartItemPO();
             cartItem.setUserId(userId);
@@ -88,19 +93,21 @@ public class CartServiceImpl implements CartService {
             cartItem.setSelected(selected);
             cartMapper.insertCartItem(cartItem);
             log.info("用户 {} 新增购物车商品，productId={}, quantity={}", userId, requestDTO.getProductId(), requestDTO.getQuantity());
-            return Result.success(cartMapper.getCartItemDetail(userId, cartItem.getId()));
+            result = cartMapper.getCartItemDetail(userId, cartItem.getId());
+        } else {
+            cartMapper.updateCartItem(existingItem.getId(), userId, targetQuantity, selected);
+            log.info("用户 {} 追加购物车商品，cartItemId={}, productId={}, quantity={}",
+                    userId, existingItem.getId(), requestDTO.getProductId(), targetQuantity);
+            result = cartMapper.getCartItemDetail(userId, existingItem.getId());
         }
 
-        cartMapper.updateCartItem(existingItem.getId(), userId, targetQuantity, selected);
-        log.info("用户 {} 追加购物车商品，cartItemId={}, productId={}, quantity={}", userId, existingItem.getId(), requestDTO.getProductId(), targetQuantity);
-        return Result.success(cartMapper.getCartItemDetail(userId, existingItem.getId()));
+        productReadCacheService.evictCartItems(userId);
+        return Result.success(result);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Result<CartItemVO> updateCartItem(Long userId,
-                                             Long id,
-                                             CartItemUpdateDTO requestDTO) {
+    public Result<CartItemVO> updateCartItem(Long userId, Long id, CartItemUpdateDTO requestDTO) {
         if (userId == null) {
             return Result.error(ResultCode.UNAUTHORIZED);
         }
@@ -131,6 +138,7 @@ public class CartServiceImpl implements CartService {
 
         cartMapper.updateCartItem(id, userId, targetQuantity, selected);
         log.info("用户 {} 更新购物车商品，cartItemId={}, quantity={}, selected={}", userId, id, targetQuantity, selected);
+        productReadCacheService.evictCartItems(userId);
         return Result.success(cartMapper.getCartItemDetail(userId, id));
     }
 
@@ -150,6 +158,7 @@ public class CartServiceImpl implements CartService {
         }
 
         log.info("用户 {} 删除购物车商品，cartItemId={}", userId, id);
+        productReadCacheService.evictCartItems(userId);
         return Result.success();
     }
 
@@ -163,6 +172,7 @@ public class CartServiceImpl implements CartService {
         boolean clearSelectedOnly = Boolean.TRUE.equals(selectedOnly);
         int deleted = clearSelectedOnly ? cartMapper.deleteSelectedCartItems(userId) : cartMapper.deleteAllCartItems(userId);
         log.info("用户 {} 清空购物车，selectedOnly={}, deleted={}", userId, clearSelectedOnly, deleted);
+        productReadCacheService.evictCartItems(userId);
         return Result.success();
     }
 

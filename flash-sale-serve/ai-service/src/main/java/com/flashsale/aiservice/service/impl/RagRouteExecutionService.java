@@ -18,6 +18,7 @@ import com.flashsale.aiservice.service.KnowledgeRetrievalService;
 import com.flashsale.aiservice.service.PromptBuilderService;
 import com.flashsale.aiservice.service.model.KnowledgeRetrieveRequest;
 import com.flashsale.aiservice.service.model.PromptBuildRequest;
+import com.flashsale.aiservice.service.model.PromptMessageBundle;
 import com.flashsale.aiservice.service.route.ChatRouteRequest;
 import com.flashsale.aiservice.service.route.ChatRouteResult;
 import lombok.RequiredArgsConstructor;
@@ -331,13 +332,13 @@ public class RagRouteExecutionService {
     promptRequest.setContextState(request.getContextState());
     promptRequest.setCompareCandidates(compareCandidates);
 
-    String prompt = promptBuilderService.buildPrompt(promptRequest);
+    PromptMessageBundle promptBundle = promptBuilderService.buildPromptBundle(promptRequest);
     try {
       log.info("Proceeding to LLM invocation, sessionId={}, intentType={}, category={}, productId={}, confidence={}, hitKnowledgeCount={}",
         request.getSession().getSessionId(), request.getIntentType(), request.getCategory(),
         request.getCurrentProductId(), context.getConfidence(), context.getHitKnowledge().size());
       return buildResult(
-        chatModelClient.chat(prompt),
+        chatModelClient.chat(promptBundle.systemPrompt(), promptBundle.userPrompt()),
         context.getHitKnowledge(),
         context.getConfidence(),
         null,
@@ -375,7 +376,7 @@ public class RagRouteExecutionService {
         || request.getIntentType() == QuestionIntentType.COMPARE_RECOMMENDATION) {
         appendCurrentProductKnowledgeIfNecessary(context.getHitKnowledge(), request);
         if (!compareCandidates.isEmpty()) {
-          appendCompareCandidateKnowledge(context.getHitKnowledge(), compareCandidates, request.getCurrentProductId());
+          appendCompareCandidateKnowledge(context.getHitKnowledge(), compareCandidates, request);
         }
       }
       context.setHitKnowledge(curateKnowledge(request, context.getHitKnowledge(), compareCandidates));
@@ -405,7 +406,7 @@ public class RagRouteExecutionService {
       || request.getIntentType() == QuestionIntentType.COMPARE_RECOMMENDATION) {
       appendCurrentProductKnowledgeIfNecessary(context.getHitKnowledge(), request);
       if (!compareCandidates.isEmpty()) {
-        appendCompareCandidateKnowledge(context.getHitKnowledge(), compareCandidates, request.getCurrentProductId());
+        appendCompareCandidateKnowledge(context.getHitKnowledge(), compareCandidates, request);
       }
     }
 
@@ -437,7 +438,12 @@ public class RagRouteExecutionService {
     query.setIntentType(request.getIntentType());
     query.setCurrentProductId(request.getCurrentProductId());
     query.setCurrentProductName(request.getCurrentProductName());
+    query.setCurrentProductType(request.getCurrentProductType());
     query.setCompareCandidateIds(compareCandidates.stream().map(ProductCandidateVO::getProductId).toList());
+    query.setCompareCandidateKeys(compareCandidates.stream()
+      .map(this::productIdentity)
+      .filter(StringUtils::hasText)
+      .toList());
     return new ArrayList<>(knowledgeRetrievalService.retrieve(query));
   }
 
@@ -454,18 +460,18 @@ public class RagRouteExecutionService {
   private boolean hasReliableEvidence(ChatRouteRequest request, List<RelatedKnowledgeVO> hitKnowledge, double confidence,
                                       String realtimeFacts, List<ProductCandidateVO> compareCandidates) {
     if (request.getIntentType() == QuestionIntentType.REALTIME_STATUS) {
-      return StringUtils.hasText(realtimeFacts) || !hitKnowledge.isEmpty();
+      return request.getCurrentProductId() != null && StringUtils.hasText(realtimeFacts);
     }
     if (request.getIntentType() == QuestionIntentType.POLICY_QA) {
       return !hitKnowledge.isEmpty() && confidence >= aiProperties.getMinConfidence();
     }
     if (request.getIntentType() == QuestionIntentType.COMPARE_RECOMMENDATION) {
-      return hasMatchedCurrentProduct(request.getCurrentProductId(), hitKnowledge)
+      return hasMatchedCurrentProduct(request, hitKnowledge)
         || (!hitKnowledge.isEmpty() && !compareCandidates.isEmpty());
     }
     if (request.getIntentType() == QuestionIntentType.PRODUCT_FACT) {
       if (request.getCurrentProductId() != null) {
-        return hasMatchedCurrentProduct(request.getCurrentProductId(), hitKnowledge);
+        return hasMatchedCurrentProduct(request, hitKnowledge);
       }
       return !hitKnowledge.isEmpty() && confidence >= aiProperties.getMinConfidence();
     }
@@ -508,14 +514,16 @@ public class RagRouteExecutionService {
       return true;
     }
     return switch (request.getIntentType()) {
-      case PRODUCT_FACT -> isCurrentProductKnowledge(request.getCurrentProductId(), knowledge)
+      case PRODUCT_FACT -> isCurrentProductKnowledge(request, knowledge)
         || (request.getCurrentProductId() == null && isProductKnowledge(knowledge));
-      case REALTIME_STATUS -> isCurrentProductKnowledge(request.getCurrentProductId(), knowledge)
+      case REALTIME_STATUS -> isCurrentProductKnowledge(request, knowledge)
         || "RULE".equalsIgnoreCase(knowledge.getSourceType());
       case POLICY_QA -> "RULE".equalsIgnoreCase(knowledge.getSourceType());
-      case COMPARE_RECOMMENDATION -> isCurrentProductKnowledge(request.getCurrentProductId(), knowledge)
-        || compareCandidates.stream().map(ProductCandidateVO::getProductId).map(String::valueOf)
-        .anyMatch(candidateId -> candidateId.equals(knowledge.getSourceId()) && isProductKnowledge(knowledge));
+      case COMPARE_RECOMMENDATION -> isCurrentProductKnowledge(request, knowledge)
+        || compareCandidates.stream()
+        .map(this::productIdentity)
+        .filter(StringUtils::hasText)
+        .anyMatch(candidateKey -> candidateKey.equals(productIdentity(knowledge)) && isProductKnowledge(knowledge));
       default -> false;
     };
   }
@@ -536,12 +544,12 @@ public class RagRouteExecutionService {
   /**
    * 检查检索结果中是否包含当前商品的知识
    */
-  private boolean hasMatchedCurrentProduct(Long productId, List<RelatedKnowledgeVO> hitKnowledge) {
-    if (productId == null || hitKnowledge == null || hitKnowledge.isEmpty()) {
+  private boolean hasMatchedCurrentProduct(ChatRouteRequest request, List<RelatedKnowledgeVO> hitKnowledge) {
+    if (request.getCurrentProductId() == null || hitKnowledge == null || hitKnowledge.isEmpty()) {
       return false;
     }
     return hitKnowledge.stream()
-      .anyMatch(item -> String.valueOf(productId).equals(item.getSourceId()) && isProductKnowledge(item));
+      .anyMatch(item -> isCurrentProductKnowledge(request, item));
   }
 
   /**
@@ -549,7 +557,7 @@ public class RagRouteExecutionService {
    */
   private void appendCurrentProductKnowledgeIfNecessary(List<RelatedKnowledgeVO> hitKnowledge, ChatRouteRequest request) {
     Long productId = request.getCurrentProductId();
-    if (productId == null || hasMatchedCurrentProduct(productId, hitKnowledge)) {
+    if (productId == null || hasMatchedCurrentProduct(request, hitKnowledge)) {
       return;
     }
 
@@ -564,13 +572,14 @@ public class RagRouteExecutionService {
    * 补充对比候选商品的知识
    */
   private void appendCompareCandidateKnowledge(List<RelatedKnowledgeVO> hitKnowledge, List<ProductCandidateVO> compareCandidates,
-                                               Long currentProductId) {
+                                               ChatRouteRequest request) {
+    String currentProductKey = productIdentity(request.getCurrentProductType(), request.getCurrentProductId());
     for (ProductCandidateVO candidate : compareCandidates) {
-      if (candidate == null || Objects.equals(candidate.getProductId(), currentProductId)) {
+      if (candidate == null || productIdentity(candidate).equals(currentProductKey)) {
         continue;
       }
       boolean exists = hitKnowledge.stream()
-        .anyMatch(item -> String.valueOf(candidate.getProductId()).equals(item.getSourceId()) && isProductKnowledge(item));
+        .anyMatch(item -> productIdentity(candidate).equals(productIdentity(item)) && isProductKnowledge(item));
       if (exists) {
         continue;
       }
@@ -876,27 +885,27 @@ public class RagRouteExecutionService {
   private String buildDiscoveryAnswer(String question, List<ProductCandidateVO> candidates, boolean broadQuestion) {
     StringBuilder builder = new StringBuilder();
     if (broadQuestion) {
-      builder.append("I found these products that may match your request: ");
+      builder.append("我找到了这些可能符合你需求的商品：");
     } else {
-      builder.append("I found these candidate products based on your question: ");
+      builder.append("根据你的问题，我找到了这些候选商品：");
     }
     for (int i = 0; i < candidates.size(); i++) {
       ProductCandidateVO candidate = candidates.get(i);
       if (i > 0) {
-        builder.append("; ");
+        builder.append("；");
       }
       builder.append(candidate.getName());
       if (candidate.getPrice() != null) {
-        builder.append(" (price: ").append(candidate.getPrice());
+        builder.append("（价格：").append(candidate.getPrice());
         if ("seckill".equalsIgnoreCase(candidate.getProductType())) {
-          builder.append(", seckill");
+          builder.append("，秒杀");
         }
-        builder.append(")");
+        builder.append("）");
       } else if ("seckill".equalsIgnoreCase(candidate.getProductType())) {
-        builder.append(" (seckill)");
+        builder.append("（秒杀）");
       }
     }
-    builder.append(" If you want, I can continue comparing them or explain the top recommendation.");
+    builder.append("。如果你愿意，我可以继续帮你对比它们，或者解释最推荐哪一款。");
     return builder.toString();
   }
 
@@ -904,28 +913,28 @@ public class RagRouteExecutionService {
    * 构建无精确匹配时的兜底回答
    */
   private String buildDiscoveryFallbackAnswer(String question, List<ProductCandidateVO> broadCandidates) {
-    StringBuilder builder = new StringBuilder("I could not find an exact match for your question");
+    StringBuilder builder = new StringBuilder("我暂时没有找到和你问题完全精确匹配的商品");
     if (StringUtils.hasText(question)) {
-      builder.append(": ").append(question.trim());
+      builder.append("：").append(question.trim());
     }
-    builder.append(". Here are some broader candidate products: ");
+    builder.append("。这里有一些更宽泛的候选商品：");
     for (int i = 0; i < broadCandidates.size(); i++) {
       ProductCandidateVO candidate = broadCandidates.get(i);
       if (i > 0) {
-        builder.append("; ");
+        builder.append("；");
       }
       builder.append(candidate.getName());
       if (candidate.getPrice() != null) {
-        builder.append(" (price: ").append(candidate.getPrice());
+        builder.append("（价格：").append(candidate.getPrice());
         if ("seckill".equalsIgnoreCase(candidate.getProductType())) {
-          builder.append(", seckill");
+          builder.append("，秒杀");
         }
-        builder.append(")");
+        builder.append("）");
       } else if ("seckill".equalsIgnoreCase(candidate.getProductType())) {
-        builder.append(" (seckill)");
+        builder.append("（秒杀）");
       }
     }
-    builder.append(" You can provide a more specific product name, brand, or category and I will narrow it down.");
+    builder.append("。你可以再提供更具体的商品名、品牌或品类，我再帮你缩小范围。");
     return builder.toString();
   }
 
@@ -1242,13 +1251,66 @@ public class RagRouteExecutionService {
     return knowledge;
   }
 
-  private boolean isCurrentProductKnowledge(Long productId, RelatedKnowledgeVO knowledge) {
-    return productId != null && String.valueOf(productId).equals(knowledge.getSourceId()) && isProductKnowledge(knowledge);
+  private boolean isCurrentProductKnowledge(ChatRouteRequest request, RelatedKnowledgeVO knowledge) {
+    if (request == null || request.getCurrentProductId() == null || !isProductKnowledge(knowledge)) {
+      return false;
+    }
+    String expectedKey = productIdentity(request.getCurrentProductType(), request.getCurrentProductId());
+    if (StringUtils.hasText(expectedKey)) {
+      return expectedKey.equals(productIdentity(knowledge));
+    }
+    return String.valueOf(request.getCurrentProductId()).equals(knowledge.getSourceId());
   }
 
   private boolean isProductKnowledge(RelatedKnowledgeVO knowledge) {
     return "PRODUCT".equalsIgnoreCase(knowledge.getSourceType())
       || "SECKILL".equalsIgnoreCase(knowledge.getSourceType());
+  }
+
+  private String productIdentity(ProductCandidateVO candidate) {
+    return candidate == null ? "" : productIdentity(candidate.getProductType(), candidate.getProductId());
+  }
+
+  private String productIdentity(RelatedKnowledgeVO knowledge) {
+    return knowledge == null ? "" : productIdentity(sourceTypeToProductType(knowledge.getSourceType()), parseProductId(knowledge.getSourceId()));
+  }
+
+  private String productIdentity(String productType, Long productId) {
+    if (!StringUtils.hasText(productType) || productId == null) {
+      return "";
+    }
+    return normalizeProductType(productType) + ":" + productId;
+  }
+
+  private String normalizeProductType(String productType) {
+    if (!StringUtils.hasText(productType)) {
+      return "";
+    }
+    if ("PRODUCT".equalsIgnoreCase(productType) || PRODUCT_TYPE_NORMAL.equalsIgnoreCase(productType)) {
+      return PRODUCT_TYPE_NORMAL;
+    }
+    if ("SECKILL".equalsIgnoreCase(productType) || PRODUCT_TYPE_SECKILL.equalsIgnoreCase(productType)) {
+      return PRODUCT_TYPE_SECKILL;
+    }
+    return productType.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private String sourceTypeToProductType(String sourceType) {
+    if ("PRODUCT".equalsIgnoreCase(sourceType)) {
+      return PRODUCT_TYPE_NORMAL;
+    }
+    if ("SECKILL".equalsIgnoreCase(sourceType)) {
+      return PRODUCT_TYPE_SECKILL;
+    }
+    return sourceType;
+  }
+
+  private Long parseProductId(String sourceId) {
+    try {
+      return StringUtils.hasText(sourceId) ? Long.parseLong(sourceId) : null;
+    } catch (NumberFormatException ignore) {
+      return null;
+    }
   }
 
   /**

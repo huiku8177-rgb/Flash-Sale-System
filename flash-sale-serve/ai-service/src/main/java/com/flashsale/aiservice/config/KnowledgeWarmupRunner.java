@@ -26,9 +26,9 @@ public class KnowledgeWarmupRunner implements ApplicationRunner {
             knowledgeSyncService.sync(new KnowledgeSyncRequestDTO());
             log.info("Initial knowledge sync completed");
         } catch (Exception ex) {
-            knowledgeStore.markKnowledgeNotReady("Initial knowledge warmup failed: " + ex.getMessage());
+            knowledgeStore.markSyncFailed("Initial knowledge warmup failed: " + ex.getMessage());
             log.warn("Initial knowledge sync skipped, productServiceUrl={}, seckillServiceUrl={}, reason={}",
-                    aiProperties.getProductServiceUrl(), aiProperties.getSeckillServiceUrl(), ex.getMessage());
+                    aiProperties.getProductServiceUrl(), aiProperties.getSeckillServiceUrl(), ex.getMessage(), ex);
         }
     }
 }

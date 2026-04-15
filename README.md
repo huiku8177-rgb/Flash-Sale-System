@@ -7,6 +7,7 @@
 - 后端采用 Spring Cloud 微服务拆分
 - 网关统一做鉴权、转发、限流和 Swagger 聚合
 - 普通商品与秒杀商品分链路处理
+- AI 服务提供商品问答、知识库同步和商品解析能力
 - 前端采用 Vue 3 + Vite + Element Plus，已具备登录、注册、商城首页、秒杀页、购物车、结算页、订单中心和账户中心
 
 当前仓库分为两个子项目：
@@ -57,6 +58,7 @@
 flash-sale-system
 ├─ flash-sale-serve
 │  ├─ auth-service
+│  ├─ ai-service
 │  ├─ common
 │  ├─ gateway
 │  ├─ order-service
@@ -143,6 +145,7 @@ Nacos 相关文档位于：
 - `product-service.yaml`
 - `order-service.yaml`
 - `seckill-service.yaml`
+- `ai-service.yaml`
 
 如需把数据库、Redis、RabbitMQ 也统一收敛到 Nacos，可以继续上传：
 
@@ -158,7 +161,8 @@ Nacos 相关文档位于：
 2. `product-service`
 3. `seckill-service`
 4. `order-service`
-5. `gateway`
+5. `ai-service`
+6. `gateway`
 
 说明：
 
@@ -184,6 +188,8 @@ npm run dev
 
 - 网关入口：`http://localhost:8080`
 - Swagger 聚合页：`http://localhost:8080/swagger-ui.html`
+- AI 服务直连文档：`http://localhost:8085/swagger-ui.html`
+- AI 服务网关 OpenAPI JSON：`http://localhost:8080/v3/api-docs/ai-service`
 
 ## 当前前端主要路由
 
@@ -241,6 +247,14 @@ npm run dev
 - 秒杀请求入口
 - Redis + Lua 控制秒杀库存
 - RabbitMQ 投递异步建单消息
+
+### `ai-service`
+
+- 商品知识问答
+- 会话列表、详情和删除
+- 自然语言商品候选解析
+- 知识库同步、同步任务查询和知识库统计
+- SpringDoc OpenAPI 文档，支持网关 Swagger 聚合
 
 ## 文档索引
 

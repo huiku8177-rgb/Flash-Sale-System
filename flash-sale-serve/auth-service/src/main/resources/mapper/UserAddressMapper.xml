@@ -15,7 +15,7 @@
         <result property="updateTime" column="update_time"/>
     </resultMap>
 
-    <sql id="BaseAddressColumns">
+     <sql id="BaseAddressColumns">
         id,
         user_id,
         receiver,
