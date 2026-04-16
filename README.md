@@ -1,64 +1,97 @@
 # Flash Sale System
 
+一个以“普通商城 + 秒杀活动 + AI 助手”为核心场景的微服务练手项目，适合用于展示商城主链路、秒杀高并发处理思路，以及 AI 商品问答接入方式。
+
 ## 项目简介
 
-这是一个“普通商品商城 + 秒杀活动”一体化练手项目，当前已经具备完整的前后端联调基础：
+当前仓库已经具备可联调、可演示的前后端闭环能力，覆盖 3 条核心业务线：
 
-- 后端采用 Spring Cloud 微服务拆分
-- 网关统一做鉴权、转发、限流和 Swagger 聚合
-- 普通商品与秒杀商品分链路处理
-- AI 服务提供商品问答、知识库同步和商品解析能力
-- 前端采用 Vue 3 + Vite + Element Plus，已具备登录、注册、商城首页、秒杀页、购物车、结算页、订单中心和账户中心
+- 普通商品链路：商品浏览、购物车、结算、下单、支付、取消
+- 秒杀链路：秒杀商品浏览、抢购、结果轮询、异步建单、支付、取消
+- AI 链路：商品问答、会话管理、候选商品解析、知识库同步
 
-当前仓库分为两个子项目：
+仓库包含两个子项目：
 
-- `flash-sale-serve`：后端微服务
-- `flash-sale-ui`：前端商城页面
+- `flash-sale-serve`：Spring Cloud 微服务后端
+- `flash-sale-ui`：Vue 3 商城前端
 
-## 当前能力概览
+## 功能亮点
 
-### 账号与身份
+### 用户与账户
 
-- 用户登录
-- 用户注册
+- 登录、注册、退出登录
 - 获取当前用户信息
 - 修改密码
 - 收货地址增删改查
 - 设置默认收货地址
 
-### 普通商品链路
+### 普通商城
 
 - 商品列表与详情
-- 支持商品名搜索
-- 支持分类筛选
-- 支持通过分类关键词命中商品搜索
+- 商品名搜索
+- 分类筛选与分类关键词命中搜索
 - 购物车增删改查
-- 独立结算页
-- 创建普通订单
+- 普通订单创建
 - 普通订单列表、详情、模拟支付、取消、支付状态查询
 
-### 秒杀链路
+### 秒杀场景
 
 - 秒杀商品列表与详情
-- 发起秒杀
-- 轮询秒杀结果
+- Redis 库存预热
+- Redis + Lua 原子校验与预扣
+- RabbitMQ 异步建单
+- 秒杀结果轮询
 - 秒杀订单列表、详情、模拟支付、取消、支付状态查询
 
-### 工程与联调能力
+### AI 助手
 
-- Gateway 统一入口
-- Nacos 注册中心 + 配置中心
-- Swagger 聚合文档
-- MySQL / Redis / RabbitMQ 基础设施
-- 请求链路日志与限流基础能力
+- 商品问答
+- 会话列表、详情、删除
+- 候选商品解析
+- 知识库同步、同步任务查询、知识库统计
+
+## 系统架构
+
+```mermaid
+flowchart TD
+    UI["flash-sale-ui<br/>Vue 3 + Vite"] --> GW["gateway<br/>统一入口 / 鉴权 / 限流"]
+    GW --> AUTH["auth-service"]
+    GW --> PRODUCT["product-service"]
+    GW --> SECKILL["seckill-service"]
+    GW --> ORDER["order-service"]
+    GW --> AI["ai-service"]
+
+    PRODUCT --> MYSQL[(MySQL)]
+    ORDER --> MYSQL
+    AUTH --> MYSQL
+    SECKILL --> MYSQL
+    AI --> MYSQL
+
+    GW --> REDIS[(Redis)]
+    PRODUCT --> REDIS
+    SECKILL --> REDIS
+    ORDER --> REDIS
+    AUTH --> REDIS
+    AI --> REDIS
+
+    SECKILL --> MQ[(RabbitMQ)]
+    MQ --> ORDER
+
+    GW --> NACOS[(Nacos)]
+    AUTH --> NACOS
+    PRODUCT --> NACOS
+    SECKILL --> NACOS
+    ORDER --> NACOS
+    AI --> NACOS
+```
 
 ## 项目结构
 
 ```text
 flash-sale-system
 ├─ flash-sale-serve
-│  ├─ auth-service
 │  ├─ ai-service
+│  ├─ auth-service
 │  ├─ common
 │  ├─ gateway
 │  ├─ order-service
@@ -67,13 +100,47 @@ flash-sale-system
 │  └─ docs
 ├─ flash-sale-ui
 ├─ README.md
-├─ Flash-Sale-System架构与接口规范.md
-├─ 前后端交互规范.md
-├─ 前端完整化待补充后端接口清单.md
-├─ 已实现技术栈解析与使用说明.md
-├─ planning.md
-└─ REVIEW_AUDIT.md
+└─ 根目录专题文档
 ```
+
+## 后端服务与默认端口
+
+| 服务 | 端口 | 说明 |
+| --- | --- | --- |
+| `gateway` | `8080` | 统一入口、鉴权、限流、Swagger 聚合 |
+| `seckill-service` | `8081` | 秒杀商品查询、秒杀请求、秒杀结果 |
+| `order-service` | `8082` | 普通订单与秒杀订单查询、支付、取消 |
+| `auth-service` | `8083` | 登录、注册、用户信息、地址管理 |
+| `product-service` | `8084` | 普通商品、购物车、普通下单入口 |
+| `ai-service` | `8085` | AI 问答、会话、知识库 |
+
+## 前端页面
+
+当前前端主要页面包括：
+
+- 登录 / 注册
+- 商城首页
+- 秒杀页
+- 购物车
+- AI 助手
+- 结算页
+- 订单中心
+- 账户信息
+- 密码安全
+
+前端当前采用 `Hash Router`，主要路由如下：
+
+- `/#/login`
+- `/#/register`
+- `/#/app/home`
+- `/#/app/flash`
+- `/#/app/cart`
+- `/#/app/assistant`
+- `/#/app/profile`
+- `/#/app/profile/orders`
+- `/#/app/profile/account`
+- `/#/app/profile/security`
+- `/#/checkout`
 
 ## 技术栈
 
@@ -86,11 +153,11 @@ flash-sale-system
 - Spring Cloud Gateway
 - OpenFeign
 - MyBatis
-- SpringDoc OpenAPI
 - MySQL
 - Redis
 - RabbitMQ
 - Nacos
+- SpringDoc OpenAPI
 
 ### 前端
 
@@ -100,11 +167,11 @@ flash-sale-system
 - Element Plus
 - Axios
 
-## 启动说明
+## 快速开始
 
 ### 1. 准备基础设施
 
-请先启动：
+先启动以下组件：
 
 - MySQL
 - Redis
@@ -117,29 +184,26 @@ SQL 文件位于：
 
 - `flash-sale-serve/docs/sql`
 
-至少需要完成：
+建议至少执行：
 
 - 初始化基础表结构
-- 导入普通商品与秒杀商品演示数据
-- 如果你使用了唯一索引增强，还需要执行用户名唯一索引脚本
+- 导入普通商品与秒杀商品示例数据
+- 执行后续字段和索引补丁脚本
 
 ### 3. 初始化 Nacos 配置
 
-Nacos 相关文档位于：
+相关文档位于：
 
 - `flash-sale-serve/docs/nacos-config-guide.md`
 - `flash-sale-serve/docs/nacos-templates/README.md`
 
-当前项目采用：
-
-- `application.yml` 负责 Nacos 接入入口
-- `application-local.yml` 负责本地兜底配置
-- Nacos 负责共享配置与服务私有配置
-
-推荐上传的 Data ID：
+推荐导入的数据集：
 
 - `flash-sale-common.yaml`
 - `flash-sale-jwt.yaml`
+- `flash-sale-mysql.yaml`
+- `flash-sale-redis.yaml`
+- `flash-sale-rabbitmq.yaml`
 - `auth-service.yaml`
 - `gateway.yaml`
 - `product-service.yaml`
@@ -147,15 +211,9 @@ Nacos 相关文档位于：
 - `seckill-service.yaml`
 - `ai-service.yaml`
 
-如需把数据库、Redis、RabbitMQ 也统一收敛到 Nacos，可以继续上传：
-
-- `flash-sale-mysql.yaml`
-- `flash-sale-redis.yaml`
-- `flash-sale-rabbitmq.yaml`
-
 ### 4. 启动后端服务
 
-建议启动顺序：
+建议顺序：
 
 1. `auth-service`
 2. `product-service`
@@ -166,12 +224,12 @@ Nacos 相关文档位于：
 
 说明：
 
-- 当前仓库内没有 Maven Wrapper
-- 如果本机未安装 `mvn`，请通过 IDE 自带 Maven 启动服务
+- 当前仓库没有 `mvnw`，请使用本机 Maven 或 IDE 自带 Maven
+- 配置采用 `application.yml + application-local.yml + Nacos` 的分层方式
 
 ### 5. 启动前端
 
-在 `flash-sale-ui` 目录执行：
+进入 `flash-sale-ui` 目录后执行：
 
 ```bash
 npm install
@@ -180,96 +238,48 @@ npm run dev
 
 ## 默认访问地址
 
-### 前端
+- 前端：`http://localhost:5173`
+- 网关：`http://localhost:8080`
+- Swagger 聚合：`http://localhost:8080/swagger-ui.html`
+- AI 服务 Swagger：`http://localhost:8085/swagger-ui.html`
 
-- 商城前端：`http://localhost:5173`
+## 最近修复记录
 
-### 后端
+近期已完成一组和 Redis 正确性相关的修复：
 
-- 网关入口：`http://localhost:8080`
-- Swagger 聚合页：`http://localhost:8080/swagger-ui.html`
-- AI 服务直连文档：`http://localhost:8085/swagger-ui.html`
-- AI 服务网关 OpenAPI JSON：`http://localhost:8080/v3/api-docs/ai-service`
+### 1. 秒杀重复消息库存误扣
 
-## 当前前端主要路由
+- 修复了秒杀重复消息命中唯一索引时，数据库库存可能被多扣一次的问题
+- 当前重复消费会优先回补本次事务中的库存扣减，再回填已有订单状态
 
-- `/#/login`
-- `/#/register`
-- `/#/app/home`
-- `/#/app/flash`
-- `/#/app/cart`
-- `/#/app/profile`
-- `/#/app/profile/orders`
-- `/#/app/profile/account`
-- `/#/app/profile/security`
-- `/#/checkout`
+### 2. AI 会话上下文缓存 miss 失真
 
-其中：
+- 修复了 AI 会话上下文在 Redis miss 时被误判为空上下文的问题
+- 当前缓存 miss 会正确回源数据库，不再直接丢失多轮会话语义
 
-- 首页和秒杀页支持匿名访问
-- 购物车、个人中心、订单中心、账户信息、密码安全和结算页需要登录
+### 3. 秒杀补偿改为 Lua 原子回滚
 
-## 核心后端模块职责
-
-### `gateway`
-
-- 统一入口
-- JWT 鉴权
-- 白名单放行
-- 请求头透传
-- Swagger 聚合
-- 网关限流
-
-### `auth-service`
-
-- 登录、注册、退出登录
-- 当前用户信息
-- 修改密码
-- 收货地址管理
-
-### `product-service`
-
-- 普通商品查询与详情
-- 商品搜索与分类筛选
-- 购物车能力
-- 基于购物车创建普通订单
-
-### `order-service`
-
-- 普通订单查询、支付、取消
-- 秒杀订单查询、支付、取消
-- 内部普通订单创建接口
-- 秒杀订单异步消费落库
-
-### `seckill-service`
-
-- 秒杀商品查询
-- 秒杀请求入口
-- Redis + Lua 控制秒杀库存
-- RabbitMQ 投递异步建单消息
-
-### `ai-service`
-
-- 商品知识问答
-- 会话列表、详情和删除
-- 自然语言商品候选解析
-- 知识库同步、同步任务查询和知识库统计
-- SpringDoc OpenAPI 文档，支持网关 Swagger 聚合
+- 将秒杀失败补偿、超时补偿、订单取消后的 Redis 回补统一收敛为 Lua 原子操作
+- 避免 `SREM + INCR` 分步执行带来的半状态问题
 
 ## 文档索引
 
-根目录文档分工如下：
+根目录文档已经按职责拆分：
 
-- `README.md`：项目总览、启动方式、入口说明
-- `Flash-Sale-System架构与接口规范.md`：微服务边界、关键链路、接口分层与鉴权规则
-- `前后端交互规范.md`：页面访问规则、联调口径、核心接口约定
-- `前端完整化待补充后端接口清单.md`：仍值得继续补齐的后端能力
-- `已实现技术栈解析与使用说明.md`：技术栈落地情况
-- `planning.md`：当前阶段规划与建议推进顺序
-- `REVIEW_AUDIT.md`：最近一轮项目与文档审计结论
+- [架构与接口规范](./Flash-Sale-System架构与接口规范.md)
+- [前后端交互规范](./前后端交互规范.md)
+- [已实现技术栈解析与使用说明](./已实现技术栈解析与使用说明.md)
+- [前端完整化待补充后端接口清单](./前端完整化待补充后端接口清单.md)
+- [AI-Service 优化方向](./ai-service-优化方向.md)
+- [当前阶段规划与后续路线](./planning.md)
+- [文档审计记录](./REVIEW_AUDIT.md)
 
-## 当前已知说明
+后端子目录文档位于：
 
-- 当前控制台直接查看中文 Markdown 时，PowerShell 可能出现乱码，这是终端编码问题，不代表文件内容错误
-- 当前仓库本身没有 `mvnw`，后端编译和启动需要依赖本机 Maven 或 IDE
-- `application-local.yml` 中的同名配置可能覆盖 Nacos 配置，联调时要注意配置优先级
+- [后端文档入口](./flash-sale-serve/docs/README.md)
+
+## 当前说明
+
+- Windows PowerShell 直接查看中文 Markdown 时可能出现乱码，这通常是终端编码显示问题，不代表文件内容错误。
+- 前端标准联调入口应优先走网关，不建议把单个服务直连作为默认使用方式。
+- 如果你准备把这个仓库提交到 GitHub，建议同时维护根目录文档和 `flash-sale-serve/docs`，避免入口文档与后端专题文档口径分裂。

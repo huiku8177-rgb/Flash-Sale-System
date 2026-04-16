@@ -1,414 +1,270 @@
 # Flash-Sale-System 架构与接口规范
 
-> 版本：2026-03-26  
-> 状态：基于当前仓库实现整理
+## 文档定位
 
-## 1. 总体架构
+本文档回答 4 个问题：
+
+1. 当前系统由哪些模块组成
+2. 每个模块的职责边界是什么
+3. 外部接口和内部接口如何分层
+4. 鉴权、透传、统一响应的约定是什么
+
+更细的前后端联调口径请看 [前后端交互规范.md](C:/Users/NeoZeng/Desktop/flash-sale-system/前后端交互规范.md)。
+
+## 总体架构
 
 ```text
-Browser
-  -> Gateway
-      -> auth-service
-      -> product-service
-      -> seckill-service
-      -> order-service
-      -> ai-service
+Vue 3 前端
+   ↓
+Gateway
+   ├─ auth-service
+   ├─ product-service
+   ├─ seckill-service
+   ├─ order-service
+   └─ ai-service
 
-product-service
-  -> OpenFeign
-      -> order-service (/internal/orders/normal)
-
-seckill-service
-  -> Redis + Lua
-  -> RabbitMQ
-      -> order-service
+公共基础设施
+   ├─ MySQL
+   ├─ Redis
+   ├─ RabbitMQ
+   └─ Nacos
 ```
 
-基础设施：
+整体设计原则：
 
-- MySQL
-- Redis
-- RabbitMQ
-- Nacos
+- 所有对外流量优先走 `gateway`
+- 认证、地址归 `auth-service`
+- 商品、购物车、普通下单入口归 `product-service`
+- 订单查询、支付、取消归 `order-service`
+- 秒杀流量入口和预扣库存归 `seckill-service`
+- AI 问答与知识库归 `ai-service`
+- 公共模型、工具类、响应结构归 `common`
 
-## 2. 模块边界
+## 模块边界
 
-### 2.1 gateway
+### `gateway`
 
 职责：
 
-- 统一外部访问入口
+- 统一入口
 - JWT 鉴权
-- 白名单路径放行
-- 移除外部伪造的内部身份头
-- 向下游透传真实 `X-User-Id`
-- Swagger/OpenAPI 聚合
-- 基础限流
+- 白名单放行
+- 用户身份透传
+- 网关限流
+- Swagger 聚合
 
-### 2.2 auth-service
+不负责：
+
+- 业务落库
+- 订单状态流转
+- 商品业务逻辑
+
+### `auth-service`
 
 职责：
 
-- 登录
-- 注册
-- 获取当前用户
+- 登录、注册、退出登录
+- 用户信息查询
 - 修改密码
-- 收货地址管理
+- 地址管理
+- Token 黑名单与 token version 维护
 
-当前对外路径：
-
-- `/auth/login`
-- `/auth/register`
-- `/auth/logout`
-- `/auth/me`
-- `/auth/updatePassword`
-- `/auth/addresses/**`
-
-### 2.3 product-service
+### `product-service`
 
 职责：
 
 - 普通商品列表与详情
-- 商品搜索
-- 按分类筛选
-- 购物车增删改查
-- 普通订单结算入口
-
-当前对外路径：
-
-- `/product/products`
-- `/product/products/{id}`
-- `/product/cart/**`
-- `/product/normal-orders`
+- 购物车管理
+- 普通订单创建入口
+- 普通商品缓存
 
 说明：
 
-- 当前商品搜索支持商品名关键词
-- 当前商品搜索也支持通过分类关键词命中分类商品，例如“酒水饮料”
+- 它负责“从商品和购物车视角发起普通下单”
+- 订单查询、支付、取消不在这里做
 
-### 2.4 order-service
+### `order-service`
 
 职责：
 
-- 普通订单列表、详情、支付、取消、支付状态
-- 秒杀订单列表、详情、支付、取消、支付状态
-- 内部普通订单创建接口
-- 秒杀异步订单消费落库
+- 普通订单查询、支付、取消
+- 秒杀订单查询、支付、取消
+- 秒杀异步建单落库
+- 超时取消和补偿
 
-当前对外路径：
+说明：
 
-- `/order/normal-orders/**`
-- `/order/seckill-orders/**`
+- 它是订单生命周期中心
+- 既管理普通订单，也管理秒杀订单
 
-当前内部路径：
-
-- `/internal/orders/normal`
-- `/internal/orders/normal/by-order-no`
-
-### 2.5 seckill-service
+### `seckill-service`
 
 职责：
 
 - 秒杀商品列表与详情
-- 秒杀请求入口
+- 秒杀入口
+- Redis 库存预热
+- Redis + Lua 原子预扣
 - 秒杀结果查询
-- Redis + Lua 库存控制
-- RabbitMQ 投递异步建单消息
 
-当前对外路径：
+说明：
 
-- `/seckill/{productId}`
-- `/seckill/result/{productId}`
-- `/seckill-product/products`
-- `/seckill-product/products/{id}`
+- 它只负责秒杀请求入口和高并发预处理
+- 真实订单创建在 `order-service` 中异步完成
 
-### 2.6 common
+### `ai-service`
 
 职责：
 
-- 通用返回模型
-- 公共异常/常量
+- 商品问答
+- 会话管理
+- 候选商品解析
+- 知识库同步与统计
+- AI 缓存与上下文管理
+
+### `common`
+
+职责：
+
+- 统一响应结构
+- 公共异常
 - JWT 工具
-- Redis Key 与状态常量
-- 通用 Web 头部常量
+- 公共 Redis Key 约定
+- 通用请求头常量
 
-### 2.7 ai-service
+## 外部接口与内部接口分层
 
-职责：
+### 外部接口
 
-- 商品知识问答
-- 多轮会话管理
-- 自然语言商品候选解析
-- 商品与规则知识同步
-- 知识库统计与同步任务查询
-- SpringDoc OpenAPI 文档输出，供 Gateway 聚合
+对前端和第三方联调开放的接口，应满足：
 
-当前对外路径：
+- 默认经由 `gateway` 暴露
+- 使用统一响应结构
+- 受网关鉴权和限流控制
 
-- `/ai/chat`
-- `/ai/chat/sessions`
-- `/ai/chat/sessions/{sessionId}`
-- `/ai/chat/resolve-product`
-- `/ai/knowledge/sync`
-- `/ai/knowledge/sync/{taskId}`
-- `/ai/knowledge/stats`
+当前主要外部路径前缀：
 
-## 3. 外部接口与内部接口分层
+- `/auth`
+- `/product`
+- `/order`
+- `/seckill-product`
+- `/seckill`
+- `/ai`
 
-### 3.1 外部接口
+### 内部接口
 
-外部接口统一经由 Gateway 访问，供前端、Swagger 和联调工具使用。
+服务间调用接口使用 `/internal/**`，只服务于微服务内部协作。
 
-网关当前路由：
+当前已存在的典型内部接口：
 
-- `/auth/**` -> `auth-service`
-- `/product/**` -> `product-service`
-- `/seckill/**` -> `seckill-service`
-- `/seckill-product/**` -> `seckill-service`
-- `/order/**` -> `order-service`
-- `/ai/**` -> `ai-service`
+- `/internal/orders/normal`
+- `/internal/orders/normal/by-order-no`
+- `/internal/products/normal-orders/restore-stock`
 
-Swagger/OpenAPI 聚合路由：
+内部接口规则：
 
-- `/v3/api-docs/auth-service` -> `auth-service`
-- `/v3/api-docs/product-service` -> `product-service`
-- `/v3/api-docs/seckill-service` -> `seckill-service`
-- `/v3/api-docs/order-service` -> `order-service`
-- `/v3/api-docs/ai-service` -> `ai-service`
+- 不作为前端联调入口
+- 不承诺长期兼容前端调用
+- 可以按服务间协作需要演进
 
-Swagger 聚合入口：
+## 鉴权规范
 
-- `http://localhost:8080/swagger-ui.html`
+### 外部请求
 
-### 3.2 内部接口
+标准做法：
 
-内部接口只用于服务间调用，不直接面向前端。
+- 请求头使用 `Authorization: Bearer <token>`
+- 前端不应信任或手工构造最终的 `X-User-Id`
 
-当前内部接口示例：
+### 网关透传
 
-- `POST /internal/orders/normal`
-- `GET /internal/orders/normal/by-order-no`
-- `POST /product/internal/normal-orders/stock/reserve`
-- `POST /product/internal/normal-orders/stock/restore`
+网关行为：
 
-约束：
+- 移除外部伪造的 `X-User-Id`
+- 校验 token 后向下游写入真实用户 ID
 
-- 前端不直接调用内部接口
-- 内部接口的变化应优先在模块边界文档中记录
-- 内部接口不应出现在对外 Swagger 分组中
+### 白名单接口
 
-## 4. 鉴权规范
+典型匿名接口包括：
 
-### 4.1 外部鉴权方式
+- 登录、注册
+- 普通商品列表与详情
+- 秒杀商品列表与详情
+- Swagger/OpenAPI 文档入口
 
-除白名单接口外，其余接口统一要求：
+具体白名单仍以 `gateway` 配置为准。
 
-```http
-Authorization: Bearer <token>
-```
+## 统一响应结构
 
-### 4.2 下游身份透传
-
-Gateway 鉴权成功后向下游写入：
-
-```http
-X-User-Id: <userId>
-```
-
-约束：
-
-- 下游服务不重复解析 JWT
-- 下游服务统一依赖 `X-User-Id` 获取当前用户
-- Gateway 必须先清理外部同名头，再写入真实身份
-
-### 4.3 白名单接口
-
-当前典型白名单包括：
-
-- `POST:/auth/login`
-- `POST:/auth/register`
-- `GET:/product/products`
-- `GET:/product/products/**`
-- `GET:/seckill-product/products`
-- `GET:/seckill-product/products/**`
-- `/swagger-ui.html`
-- `/swagger-ui/**`
-- `/v3/api-docs`
-- `/v3/api-docs/**`
-- `/error`
-- `/favicon.ico`
-- `GET:/ai/health`
-
-## 5. 统一响应规范
-
-所有业务接口统一返回：
+所有外部接口统一使用：
 
 ```json
 {
   "code": 200,
-  "message": "成功",
-  "data": {},
-  "timestamp": "2026-03-26T12:00:00"
+  "message": "success",
+  "data": {}
 }
 ```
 
-字段说明：
+约定：
 
-- `code`：业务码
-- `message`：中文提示
-- `data`：业务数据，可为对象、数组或 `null`
-- `timestamp`：服务端响应时间
+- `code = 200` 表示业务成功
+- 业务失败时由 `code/message` 表达
+- 前端统一从 `data` 取业务载荷
 
-## 6. 当前核心对外接口
+## 核心业务链路
 
-### 6.1 认证与账户
+### 普通商品下单链路
 
-- `POST /auth/login`
-- `POST /auth/register`
-- `POST /auth/logout`
-- `GET /auth/me`
-- `POST /auth/updatePassword`
-- `GET /auth/addresses`
-- `GET /auth/addresses/{id}`
-- `POST /auth/addresses`
-- `PUT /auth/addresses/{id}`
-- `DELETE /auth/addresses/{id}`
-- `PUT /auth/addresses/{id}/default`
+1. 前端查询商品与购物车
+2. 前端调用 `POST /product/normal-orders`
+3. `product-service` 组装下单请求并调用 `order-service` 内部接口
+4. `order-service` 落库普通订单
+5. 前端再通过 `/order/normal-orders/**` 查询、支付、取消
 
-### 6.2 普通商品与购物车
+### 秒杀链路
 
-- `GET /product/products`
-- `GET /product/products/{id}`
-- `GET /product/cart/items`
-- `POST /product/cart/items`
-- `PUT /product/cart/items/{id}`
-- `DELETE /product/cart/items/{id}`
-- `DELETE /product/cart/items`
-- `POST /product/normal-orders`
+1. 前端调用 `POST /seckill/{productId}`
+2. `seckill-service` 用 Redis + Lua 做库存与重复校验
+3. 秒杀消息投递到 RabbitMQ
+4. `order-service` 消费消息并创建秒杀订单
+5. 前端通过 `/seckill/result/{productId}` 轮询结果
+6. 后续通过 `/order/seckill-orders/**` 处理支付与取消
 
-### 6.3 普通订单
+### AI 问答链路
 
-- `GET /order/normal-orders`
-- `GET /order/normal-orders/{id}`
-- `POST /order/normal-orders/{id}/pay`
-- `POST /order/normal-orders/{id}/cancel`
-- `GET /order/normal-orders/{id}/pay-status`
+1. 前端调用 `POST /ai/chat`
+2. `ai-service` 获取或创建会话
+3. 结合上下文、历史记录、知识库检索和路由策略生成回答
+4. 会话与历史写入 DB，并将热点上下文写入 Redis
 
-### 6.4 秒杀
+## 配置分层约定
 
-- `GET /seckill-product/products`
-- `GET /seckill-product/products/{id}`
-- `POST /seckill/{productId}`
-- `GET /seckill/result/{productId}`
+当前后端采用三层配置：
 
-### 6.5 秒杀订单
-
-- `GET /order/seckill-orders`
-- `GET /order/seckill-orders/{id}`
-- `POST /order/seckill-orders/{id}/pay`
-- `POST /order/seckill-orders/{id}/cancel`
-- `GET /order/seckill-orders/{id}/pay-status`
-
-### 6.6 AI 问答与知识库
-
-- `POST /ai/chat`
-- `GET /ai/chat/sessions`
-- `GET /ai/chat/sessions/{sessionId}`
-- `DELETE /ai/chat/sessions/{sessionId}`
-- `POST /ai/chat/resolve-product`
-- `POST /ai/knowledge/sync`
-- `GET /ai/knowledge/sync/{taskId}`
-- `GET /ai/knowledge/stats`
-
-说明：
-
-- `productType` 用于区分普通商品与秒杀商品，推荐前端在商品详情页提问时与 `productId` 一并传入
-- 网关文档入口中 AI 分组对应 `/v3/api-docs/ai-service`
-
-## 7. 两条核心业务链路
-
-### 7.1 普通商品下单链路
-
-```text
-前端 -> Gateway -> product-service -> OpenFeign -> order-service
-```
-
-说明：
-
-1. 前端不再直接提交商品 `items` 创建普通订单
-2. `product-service` 读取当前用户已选中的购物车商品
-3. `product-service` 校验库存、商品状态和金额
-4. `product-service` 通过 Feign 调用 `order-service` 内部建单接口
-5. 前端再调用普通订单支付接口完成模拟支付
-
-### 7.2 秒杀链路
-
-```text
-前端 -> Gateway -> seckill-service -> Redis/Lua -> RabbitMQ -> order-service
-```
-
-说明：
-
-1. 秒杀入口先做库存和重复下单控制
-2. 同步返回排队/受理结果
-3. 异步由 `order-service` 落库创建秒杀订单
-4. 前端通过轮询结果接口确认是否抢购成功
-
-## 8. 搜索与分类约定
-
-### 8.1 商品列表查询参数
-
-`GET /product/products`
-
-支持参数：
-
-- `name`
-- `status`
-- `categoryId`
-- `categories`
-- `categories[]`
-
-### 8.2 搜索语义
-
-当前搜索支持两类命中方式：
-
-- 商品名称模糊匹配
-- 分类名称关键词匹配
-
-示例：
-
-- 搜索 `耳机`：按商品名命中
-- 搜索 `酒水饮料`：按分类命中
-- 搜索 `饮料`：按分类关键词命中
-
-## 9. Nacos 配置分层约定
-
-当前推荐方式：
-
-- `application.yml`：服务名、Nacos 地址、`spring.config.import`
+- `application.yml`：服务名、Nacos 接入、基础入口
 - `application-local.yml`：本地兜底配置
 - Nacos：共享配置与服务私有配置
 
-推荐 Data ID：
+推荐共享 Data ID：
 
 - `flash-sale-common.yaml`
 - `flash-sale-jwt.yaml`
-- `gateway.yaml`
+- `flash-sale-mysql.yaml`
+- `flash-sale-redis.yaml`
+- `flash-sale-rabbitmq.yaml`
+
+推荐服务私有 Data ID：
+
 - `auth-service.yaml`
+- `gateway.yaml`
 - `product-service.yaml`
 - `order-service.yaml`
 - `seckill-service.yaml`
 - `ai-service.yaml`
 
-扩展共享配置可使用：
+## 文档维护规则
 
-- `flash-sale-mysql.yaml`
-- `flash-sale-redis.yaml`
-- `flash-sale-rabbitmq.yaml`
-
-## 10. 文档维护约定
-
-- 启动方式变化时优先更新 `README.md`
-- 模块边界变化时优先更新本文件
-- 页面联调口径变化时优先更新 `前后端交互规范.md`
-- 仍未完成的接口能力变化时优先更新 `前端完整化待补充后端接口清单.md`
+- 入口、端口、启动方式变化时，优先更新 [README.md](C:/Users/NeoZeng/Desktop/flash-sale-system/README.md)
+- 模块边界、链路、接口层次变化时，更新本文档
+- 页面访问规则和前端 API 调用口径变化时，更新 [前后端交互规范.md](C:/Users/NeoZeng/Desktop/flash-sale-system/前后端交互规范.md)

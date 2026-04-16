@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
@@ -51,6 +52,7 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
     private final SeckillOrderMapper seckillOrderMapper;
     private final SeckillProductMapper seckillProductMapper;
     private final StringRedisTemplate stringRedisTemplate;
+    private final DefaultRedisScript<Long> seckillRollbackScript;
 
     @Override
     public Result<List<SeckillOrderVO>> listOrders(Long userId) {
@@ -197,6 +199,7 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
         long ttlSeconds = resolveTtlSeconds(message.getExpireAt());
         String orderKey = RedisKeys.seckillOrder(userId, productId);
         String resultKey = RedisKeys.seckillResult(userId, productId);
+        boolean stockDecreased = false;
 
         try {
             // 先扣减数据库库存，再创建待支付秒杀订单，确保数据库状态先落地。
@@ -204,6 +207,8 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
             if (updated <= 0) {
                 throw new RuntimeException("扣减数据库库存失败");
             }
+
+            stockDecreased = true;
 
             SeckillOrderPO order = new SeckillOrderPO();
             order.setUserId(userId);
@@ -219,6 +224,7 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
             log.info("创建秒杀订单成功，messageId={}, userId={}, productId={}, orderId={}",
                     message.getMessageId(), userId, productId, order.getId());
         } catch (DuplicateKeyException e) {
+            rollbackDuplicateStock(productId, stockDecreased, message.getMessageId(), userId);
             SeckillOrderPO existed = seckillOrderMapper.getByUserIdAndProductId(userId, productId);
             if (existed != null) {
                 cacheExistingOrderResult(orderKey, resultKey, ttlSeconds, existed);
@@ -228,6 +234,18 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
             }
             throw e;
         }
+    }
+
+    private void rollbackDuplicateStock(Long productId, boolean stockDecreased, String messageId, Long userId) {
+        if (!stockDecreased) {
+            return;
+        }
+        int restored = seckillProductMapper.increaseStock(productId);
+        if (restored <= 0) {
+            throw new IllegalStateException("Failed to restore DB stock after duplicate seckill message");
+        }
+        log.info("duplicate seckill message restored DB stock, messageId={}, userId={}, productId={}",
+                messageId, userId, productId);
     }
 
     @Override
@@ -248,8 +266,7 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
             return;
         }
 
-        stringRedisTemplate.opsForSet().remove(userKey, String.valueOf(userId));
-        stringRedisTemplate.opsForValue().increment(stockKey);
+        executeRedisRollback(stockKey, userKey, userId);
         stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.FAIL, ttlSeconds, TimeUnit.SECONDS);
         log.error("秒杀消息进入死信并完成补偿，请关注告警并排查原因，messageId={}, userId={}, productId={}",
                 message.getMessageId(), userId, productId);
@@ -322,10 +339,19 @@ public class SeckillOrderServiceImpl implements SeckillOrderService {
         try {
             stringRedisTemplate.delete(orderKey);
             stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.FAIL, DEFAULT_RESULT_TTL_SECONDS, TimeUnit.SECONDS);
-            stringRedisTemplate.opsForValue().increment(stockKey);
+            executeRedisRollback(stockKey, RedisKeys.seckillUser(productId), userId);
         } catch (Exception ex) {
             log.warn("同步秒杀订单取消后的 Redis 状态失败，userId={}, productId={}", userId, productId, ex);
         }
+    }
+
+    private long executeRedisRollback(String stockKey, String userKey, Long userId) {
+        Long rollbackResult = stringRedisTemplate.execute(
+                seckillRollbackScript,
+                List.of(stockKey, userKey),
+                String.valueOf(userId)
+        );
+        return rollbackResult == null ? 0L : rollbackResult;
     }
 
     private String buildCancelledMessage(SeckillOrderVO order) {

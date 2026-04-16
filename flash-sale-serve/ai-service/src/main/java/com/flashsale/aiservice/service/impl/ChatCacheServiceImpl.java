@@ -8,6 +8,7 @@ import com.flashsale.aiservice.util.ChatCacheKeys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.util.List;
@@ -90,10 +91,13 @@ public class ChatCacheServiceImpl implements ChatCacheService {
   public ConversationContextState getContextState(String sessionId) {
     try {
       String value = stringRedisTemplate.opsForValue().get(ChatCacheKeys.sessionContext(sessionId));
+      if (!StringUtils.hasText(value)) {
+        return null;
+      }
       return chatJsonCodec.readConversationContext(value);
     } catch (Exception ex) {
       log.warn("Failed to load chat context from Redis, sessionId={}", sessionId, ex);
-      return new ConversationContextState();
+      return null;
     }
   }
 

@@ -1,29 +1,31 @@
 # Nacos 配置中心接入指南
 
-## 目标
+这个文档说明当前 `flash-sale-serve` 项目里，Nacos 配置中心应该怎么接、配置怎么拆、迁移顺序怎么排，以及哪些内容不适合放进 Git 或 Nacos。
 
-当前项目建议保留两层本地配置：
+## 文档目标
 
-- `application.yml`：通用配置
-- `application-local.yml`：本机启动配置
+当前项目建议保留“两层本地配置 + 一层 Nacos 配置中心”的结构：
 
-真正的公共配置和环境配置，统一收敛到 Nacos 配置中心。
+- `application.yml`：应用公共默认配置
+- `application-local.yml`：本机启动入口和本地覆盖
+- Nacos：共享配置、环境差异配置、服务私有配置
 
-## 先明确一件事
+核心原则不是“把所有配置都塞进 Nacos”，而是把真正需要统一管理的部分收口进去。
 
-Nacos 有两个能力：
+## 先区分两件事
+
+Nacos 在这个项目里有两类能力：
 
 - 注册中心：服务注册与发现
 - 配置中心：统一管理配置
 
-你现在项目里已经接入了注册中心。
-如果要做“统一管理公共配置”，要额外接入配置中心。
+当前项目已经接入了注册中心。如果要把 MySQL、Redis、RabbitMQ、JWT、网关路由等配置统一管理，还需要显式接入配置中心能力。
 
 ## 推荐的配置分层
 
-### 本地文件保留
+### 本地文件保留什么
 
-本地文件只保留“应用启动前必须知道”的内容：
+本地文件只保留“服务启动前必须先知道”的配置：
 
 - `spring.application.name`
 - `spring.profiles.active`
@@ -32,19 +34,17 @@ Nacos 有两个能力：
 - `spring.cloud.nacos.config.namespace`
 - `spring.config.import`
 
-原因很简单：应用必须先知道去哪里找 Nacos，才能从 Nacos 里拉别的配置。
+原因很简单：应用必须先知道去哪个 Nacos、读哪个 namespace / group，之后才能把其他配置拉下来。
 
-### 建议放到 Nacos 的配置
+### 建议放到 Nacos 的共享配置
 
-建议把配置拆成“共享配置 + 服务私有配置”。
-
-#### 共享配置
+建议拆成几份共享 Data ID：
 
 - `flash-sale-common.yaml`
-  - `server.forward-headers-strategy`
-  - `mybatis.configuration.map-underscore-to-camel-case`
   - 通用日志级别
-  - 通用 OpenFeign 超时
+  - `server.forward-headers-strategy`
+  - MyBatis 通用配置
+  - OpenFeign 通用超时
 
 - `flash-sale-mysql.yaml`
   - `spring.datasource.*`
@@ -58,7 +58,9 @@ Nacos 有两个能力：
 - `flash-sale-jwt.yaml`
   - `flash-sale.jwt.*`
 
-#### 服务私有配置
+### 建议放到 Nacos 的服务私有配置
+
+每个服务保留一份自己的 Data ID：
 
 - `gateway.yaml`
 - `auth-service.yaml`
@@ -67,18 +69,18 @@ Nacos 有两个能力：
 - `seckill-service.yaml`
 - `ai-service.yaml`
 
-这里放各服务独有的内容，比如：
+这类配置通常包括：
 
-- gateway 路由、鉴权白名单、限流
-- order 定时任务参数
-- seckill 预热和 MQ 路由参数
-- ai-service 模型地址、模型名称、检索参数、规则文档和 SpringDoc 文档开关
+- 网关路由、鉴权白名单、限流规则
+- 秒杀预热参数、MQ 路由参数
+- 订单补偿、任务调度、超时参数
+- AI 模型地址、模型名、检索参数、SpringDoc 开关
 
-## 推荐接入步骤
+## 推荐接入方式
 
-### 1. 给每个服务加 Nacos Config 依赖
+### 1. 给服务补 Nacos Config 依赖
 
-在每个服务的 `pom.xml` 增加：
+每个需要从 Nacos 拉配置的服务，都需要在 `pom.xml` 里增加：
 
 ```xml
 <dependency>
@@ -87,9 +89,9 @@ Nacos 有两个能力：
 </dependency>
 ```
 
-### 2. 在 `application.yml` 中加配置导入
+### 2. 在 `application.yml` 里声明导入顺序
 
-推荐写法：
+推荐使用下面这类写法：
 
 ```yaml
 spring:
@@ -103,12 +105,12 @@ spring:
       - optional:nacos:${spring.application.name}.yaml?group=FLASH_SALE
 ```
 
-说明：
+这里有两个关键点：
 
-- `optional:` 表示 Nacos 中暂时没有这份配置也不会直接启动失败
-- `${spring.application.name}.yaml` 能让每个服务自动加载自己的专属配置
+- `optional:` 表示某份配置暂时不存在时，不直接把应用启动打死
+- `${spring.application.name}.yaml` 可以让各服务自动加载自己的私有配置
 
-### 3. 在 `application-local.yml` 中保留 Nacos 入口信息
+### 3. 在 `application-local.yml` 保留 Nacos 入口信息
 
 示例：
 
@@ -127,11 +129,11 @@ spring:
         refresh-enabled: true
 ```
 
-这里不要再放数据库、Redis、RabbitMQ 这些真正业务配置了。
+这里不要再继续存放数据库、Redis、RabbitMQ 之类真正的业务配置，否则配置分层会重新混乱。
 
 ### 4. 在 Nacos 控制台创建 Data ID
 
-建议创建这些 Data ID：
+建议至少创建这些 Data ID：
 
 - `flash-sale-common.yaml`
 - `flash-sale-mysql.yaml`
@@ -145,75 +147,72 @@ spring:
 - `seckill-service.yaml`
 - `ai-service.yaml`
 
-推荐统一：
+推荐统一约定：
 
-- Namespace：你的项目命名空间
+- Namespace：项目独立 namespace
 - Group：`FLASH_SALE`
 - 格式：`YAML`
 
 ## 迁移顺序建议
 
-不要一次全搬，按这个顺序最稳：
+不要一次性把所有配置一起搬走。当前项目更稳的顺序是：
 
-1. 先把 MySQL、Redis、RabbitMQ 搬到 Nacos
-2. 再把 JWT 和通用超时参数搬到 Nacos
-3. 最后再搬 gateway 路由、限流、秒杀参数、AI 模型参数这类业务配置
+1. 先迁 MySQL、Redis、RabbitMQ
+2. 再迁 JWT 和通用超时配置
+3. 最后迁网关路由、限流、秒杀参数、AI 参数等业务配置
 
-这样即使中途有问题，也比较容易定位。
+这个顺序的好处是，先把基础设施层稳定下来，再动业务配置，排障会容易很多。
 
 ## Swagger / OpenAPI 聚合说明
 
-当前网关聚合 Swagger 文档，推荐在 `gateway.yaml` 中维护：
+当前项目通过网关聚合 Swagger，建议在 `gateway.yaml` 中维护下面这些路由：
 
-- `/v3/api-docs/auth-service` -> `auth-service`
-- `/v3/api-docs/product-service` -> `product-service`
-- `/v3/api-docs/seckill-service` -> `seckill-service`
-- `/v3/api-docs/order-service` -> `order-service`
-- `/v3/api-docs/ai-service` -> `ai-service`
+- `/v3/api-docs/auth-service`
+- `/v3/api-docs/product-service`
+- `/v3/api-docs/seckill-service`
+- `/v3/api-docs/order-service`
+- `/v3/api-docs/ai-service`
 
-网关聚合入口：
+默认入口：
 
-- `http://localhost:8080/swagger-ui.html`
+- 网关聚合 Swagger UI：`http://localhost:8080/swagger-ui.html`
+- AI 服务直连 Swagger UI：`http://localhost:8085/swagger-ui.html`
+- AI 服务直连 OpenAPI：`http://localhost:8085/v3/api-docs`
 
-AI 服务直连入口：
-
-- `http://localhost:8085/swagger-ui.html`
-- `http://localhost:8085/v3/api-docs`
-
-网关鉴权白名单需要包含：
+同时，网关鉴权白名单必须继续放开：
 
 - `/swagger-ui.html`
 - `/swagger-ui/**`
 - `/v3/api-docs`
 - `/v3/api-docs/**`
 
-`ai-service.yaml` 中需要开启：
+## 密钥和敏感信息的放置原则
 
-```yaml
-springdoc:
-  api-docs:
-    enabled: true
-  swagger-ui:
-    path: /swagger-ui.html
-```
+下面这类内容不建议进 Git 跟踪文件：
+
+- 第三方模型 API Key
+- 生产密码
+- 真实内网地址如果不适合公开
+
+尤其是 `ai-service` 的 DashScope Key，建议继续使用运行时环境变量：
+
+- `FLASH_SALE_AI_API_KEY`
+
+模板文件可以保留字段名和默认结构，但不要保留真实密钥。
 
 ## 当前项目最适合的落地方式
 
-我建议你现在先维持：
+如果你现在还在本地开发阶段，最实际的方式是：
 
-- `application.yml`
-- `application-local.yml`
+- 保留 `application.yml`
+- 保留 `application-local.yml`
+- 把共享环境配置逐步迁入 Nacos
+- 继续使用模板目录维护 Data ID 样例
 
-等你确认 Nacos 配置中心也要正式启用时，再做下一步代码改造：
+这样既不会一下子把启动链路搞复杂，也能让配置中心逐步成形。
 
-- 给 6 个服务加 `nacos-config` 依赖
-- 把共享配置 Data ID 建起来
-- 再把各服务的本地业务配置逐步迁过去
+## 建议配合阅读
 
-## 我建议的下一步
-
-如果你要我继续帮你落地，我建议按这个顺序：
-
-1. 我先帮你把 6 个服务补上 `spring-cloud-starter-alibaba-nacos-config`
-2. 再把 `application.yml` 改成支持 `spring.config.import`
-3. 最后我帮你生成一套可直接导入 Nacos 的 YAML 模板
+- [docs/README.md](./README.md)
+- [Nacos 模板说明](./nacos-templates/README.md)
+- [AI Service 本地接入说明](./ai-service-setup.md)

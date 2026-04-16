@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -34,6 +35,7 @@ public class SeckillResultCompensationTask {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final SeckillOrderMapper seckillOrderMapper;
+    private final DefaultRedisScript<Long> seckillRollbackScript;
 
     /**
      * 定时扫描接近过期的 PROCESSING 状态：
@@ -77,11 +79,11 @@ public class SeckillResultCompensationTask {
                 }
 
                 String userKey = RedisKeys.seckillUser(productId);
-                Boolean userMarked = stringRedisTemplate.opsForSet().isMember(userKey, String.valueOf(userId));
-                if (Boolean.TRUE.equals(userMarked)) {
-                    stringRedisTemplate.opsForSet().remove(userKey, String.valueOf(userId));
-                    stringRedisTemplate.opsForValue().increment(RedisKeys.seckillStock(productId));
-                }
+                stringRedisTemplate.execute(
+                        seckillRollbackScript,
+                        java.util.List.of(RedisKeys.seckillStock(productId), userKey),
+                        String.valueOf(userId)
+                );
 
                 stringRedisTemplate.opsForValue().set(resultKey, SeckillResultState.FAIL, RESULT_FAIL_TTL_SECONDS, TimeUnit.SECONDS);
                 log.warn("排队超时补偿完成 userId={}, productId={}, resultKey={}", userId, productId, resultKey);
