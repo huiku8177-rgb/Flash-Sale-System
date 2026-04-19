@@ -1,0 +1,99 @@
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: flash-sale-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - "123321"
+      - --appendonly
+      - "yes"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "123321", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - flash-sale-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: flash-sale-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      TZ: Asia/Shanghai
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - flash-sale-net
+
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    container_name: flash-sale-nacos
+    restart: unless-stopped
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+      TZ: Asia/Shanghai
+      JVM_XMS: 256m
+      JVM_XMX: 256m
+      JVM_XMN: 128m
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+      - "9849:9849"
+    volumes:
+      - nacos-logs:/home/nacos/logs
+    networks:
+      - flash-sale-net
+
+  mysql:
+    image: mysql:8.0.36
+    container_name: flash-sale-mysql
+    restart: unless-stopped
+    profiles:
+      - with-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_DATABASE: flash_sale
+      TZ: Asia/Shanghai
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p123456"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - flash-sale-net
+
+volumes:
+  redis-data:
+  rabbitmq-data:
+  nacos-logs:
+  mysql-data:
+
+networks:
+  flash-sale-net:
+    driver: bridge
