@@ -1,10 +1,11 @@
 <script setup>
-import { ArrowRight, ChatDotRound, Connection, MagicStick, RefreshRight } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
+import { ArrowRight, ChatDotRound, Connection, Delete, MagicStick, RefreshRight } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { chatWithAssistant, getChatSession, resolveProductQuestion } from "../api/ai";
+import { chatWithAssistant, deleteChatSession, getChatSession, listChatSessions, resolveProductQuestion } from "../api/ai";
 import { authState } from "../stores/auth";
+import { formatDateTime } from "../utils/format";
 
 const route = useRoute();
 const router = useRouter();
@@ -14,7 +15,10 @@ const question = ref("");
 const sending = ref(false);
 const resolvingProduct = ref(false);
 const loadingSession = ref(false);
+const loadingSessions = ref(false);
+const deletingSessionId = ref("");
 const records = ref([]);
+const sessionSummaries = ref([]);
 const latestMeta = ref(null);
 const messagesViewport = ref(null);
 
@@ -107,6 +111,21 @@ const messageList = computed(() =>
   ])
 );
 
+const groupedSessionSummaries = computed(() => {
+  const groups = new Map([
+    ["today", { key: "today", label: "今天", items: [] }],
+    ["earlier", { key: "earlier", label: "更早", items: [] }]
+  ]);
+
+  sessionSummaries.value.forEach((summary) => {
+    const activityTime = summary?.lastActiveAt || summary?.createdAt;
+    const groupKey = isToday(activityTime) ? "today" : "earlier";
+    groups.get(groupKey).items.push(summary);
+  });
+
+  return Array.from(groups.values()).filter((group) => group.items.length > 0);
+});
+
 watch(
   () => messageList.value.length,
   async () => {
@@ -124,6 +143,7 @@ watch(
 
 onMounted(() => {
   syncRouteContext(false);
+  loadSessionSummaries();
 });
 
 function syncRouteContext(resetSession) {
@@ -166,6 +186,94 @@ function formatAnswerPolicy(value) {
 
 function formatFallbackReason(value) {
   return value ? fallbackReasonMap[value] || value : "无";
+}
+
+function formatSessionTime(value) {
+  if (!value) {
+    return "--";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return formatDateTime(value);
+  }
+
+  const diff = Date.now() - date.getTime();
+  if (diff < 60 * 1000) {
+    return "刚刚";
+  }
+  if (diff < 60 * 60 * 1000) {
+    return `${Math.max(Math.floor(diff / (60 * 1000)), 1)} 分钟前`;
+  }
+  if (diff < 24 * 60 * 60 * 1000) {
+    return `${Math.max(Math.floor(diff / (60 * 60 * 1000)), 1)} 小时前`;
+  }
+
+  return formatDateTime(value);
+}
+
+function isToday(value) {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+}
+
+function formatSessionId(value) {
+  if (!value) {
+    return "未开始";
+  }
+  return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
+}
+
+function getSessionTitle(summary) {
+  return summary?.lastQuestion || summary?.currentProductName || "新会话";
+}
+
+function getSessionPreview(summary) {
+  return summary?.lastAnswerSummary || "这条会话还没有生成摘要，点开后可以继续追问。";
+}
+
+function getSessionTypeLabel(summary) {
+  return summary?.contextType === "product-detail" ? "商品问答" : "通用咨询";
+}
+
+function getSessionContextLabel(summary) {
+  if (summary?.currentProductName) {
+    return summary.currentProductName;
+  }
+  return summary?.contextType === "product-detail" ? "商品上下文已绑定" : "未绑定商品上下文";
+}
+
+function getSessionMessageCount(summary) {
+  const count = Number(summary?.messageCount || 0);
+  return `${count} 条消息`;
+}
+
+async function loadSessionSummaries(options = {}) {
+  const { silent = false } = options;
+
+  loadingSessions.value = true;
+  try {
+    sessionSummaries.value = (await listChatSessions(12)) || [];
+  } catch (error) {
+    if (!silent) {
+      ElMessage.error(error.message || "聊天记录加载失败");
+    }
+  } finally {
+    loadingSessions.value = false;
+  }
 }
 
 function applyPrompt(prompt) {
@@ -257,6 +365,7 @@ async function submitChat(trimmedQuestion, productId) {
     question.value = "";
     pendingQuestion.value = "";
     await loadSession();
+    await loadSessionSummaries({ silent: true });
   } catch (error) {
     ElMessage.error(error.message || "AI 回答失败，请稍后重试");
   } finally {
@@ -292,6 +401,8 @@ async function loadSession() {
         name: contextState.currentProductName || `商品 #${contextState.currentProductId}`,
         productType: contextState.currentProductType || "normal"
       };
+    } else {
+      productContext.value = null;
     }
 
     const latestRecord = records.value[records.value.length - 1];
@@ -302,11 +413,59 @@ async function loadSession() {
         confidence: latestRecord.confidence,
         fallbackReason: latestRecord.fallbackReason
       };
+    } else {
+      latestMeta.value = null;
     }
   } catch (error) {
     ElMessage.error(error.message || "会话记录加载失败");
   } finally {
     loadingSession.value = false;
+  }
+}
+
+async function openSession(summary) {
+  if (!summary?.sessionId || summary.sessionId === sessionId.value) {
+    return;
+  }
+
+  sessionId.value = summary.sessionId;
+  question.value = "";
+  pendingQuestion.value = "";
+  candidateKeyword.value = "";
+  candidateList.value = [];
+  await loadSession();
+}
+
+async function removeSession(summary) {
+  if (!summary?.sessionId) {
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm("删除后这条聊天记录将不再出现在历史列表中，是否继续？", "删除会话", {
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
+    return;
+  }
+
+  deletingSessionId.value = summary.sessionId;
+  try {
+    await deleteChatSession(summary.sessionId);
+    sessionSummaries.value = sessionSummaries.value.filter((item) => item.sessionId !== summary.sessionId);
+
+    if (summary.sessionId === sessionId.value) {
+      resetConversation(false);
+    }
+
+    ElMessage.success("会话已删除");
+    await loadSessionSummaries({ silent: true });
+  } catch (error) {
+    ElMessage.error(error.message || "删除会话失败");
+  } finally {
+    deletingSessionId.value = "";
   }
 }
 
@@ -362,6 +521,81 @@ function resetConversation(clearContext = true) {
 
     <section class="ai-layout">
       <aside class="ai-sidebar">
+        <div class="ai-panel ai-panel--history">
+          <div class="ai-panel-head">
+            <div>
+              <p class="eyebrow">Chat History</p>
+              <h3>聊天记录</h3>
+            </div>
+            <el-button text :icon="RefreshRight" :loading="loadingSessions" @click="loadSessionSummaries">
+              刷新
+            </el-button>
+          </div>
+
+          <div class="ai-history-summary">
+            <span>最近 {{ sessionSummaries.length }} 条会话</span>
+            <small>点击一条记录即可切换到对应上下文</small>
+          </div>
+
+          <div v-if="loadingSessions && !sessionSummaries.length" class="ai-history-skeleton">
+            <div v-for="index in 4" :key="index" class="ai-history-skeleton-item" />
+          </div>
+
+          <div v-else-if="groupedSessionSummaries.length" class="ai-history-list">
+            <section
+              v-for="group in groupedSessionSummaries"
+              :key="group.key"
+              class="ai-history-group"
+            >
+              <div class="ai-history-group-head">
+                <span>{{ group.label }}</span>
+                <small>{{ group.items.length }} 条</small>
+              </div>
+
+              <article
+                v-for="summary in group.items"
+                :key="summary.sessionId"
+                class="ai-history-item"
+                :class="{ 'is-active': summary.sessionId === sessionId }"
+              >
+                <button
+                  type="button"
+                  class="ai-history-main"
+                  :title="getSessionTitle(summary)"
+                  @click="openSession(summary)"
+                >
+                  <div class="ai-history-topline">
+                    <span class="ai-history-type">{{ getSessionTypeLabel(summary) }}</span>
+                    <small>{{ formatSessionTime(summary.lastActiveAt || summary.createdAt) }}</small>
+                  </div>
+                  <strong>{{ getSessionTitle(summary) }}</strong>
+                  <p>{{ getSessionPreview(summary) }}</p>
+                  <div class="ai-history-meta">
+                    <span>{{ getSessionContextLabel(summary) }}</span>
+                    <span>{{ getSessionMessageCount(summary) }}</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  class="ai-history-delete"
+                  :disabled="deletingSessionId === summary.sessionId"
+                  :title="deletingSessionId === summary.sessionId ? '删除中' : '删除会话'"
+                  @click.stop="removeSession(summary)"
+                >
+                  <el-icon><Delete /></el-icon>
+                </button>
+              </article>
+            </section>
+          </div>
+
+          <div v-else class="ai-history-empty">
+            <div class="ai-history-empty-mark">记录</div>
+            <h4>还没有历史会话</h4>
+            <p>发出第一条问题后，最近聊天记录会自动出现在这里。</p>
+          </div>
+        </div>
+
         <div class="ai-panel ai-panel--soft">
           <div class="ai-panel-head">
             <div>
@@ -484,10 +718,16 @@ function resetConversation(clearContext = true) {
             class="ai-message"
             :class="`is-${message.role}`"
           >
-            <div class="ai-message-bubble">
-              <p>{{ message.content }}</p>
+            <div class="ai-message-shell">
+              <div class="ai-message-label">
+                <span>{{ message.role === "user" ? "你" : "AI 助手" }}</span>
+                <small>{{ formatSessionTime(message.createdAt) }}</small>
+              </div>
 
-              <template v-if="message.role === 'assistant'">
+              <div class="ai-message-bubble">
+                <p>{{ message.content }}</p>
+
+                <template v-if="message.role === 'assistant'">
                 <div v-if="message.sources?.length" class="ai-message-sources">
                   <span v-for="source in message.sources" :key="source">{{ source }}</span>
                 </div>
@@ -496,7 +736,8 @@ function resetConversation(clearContext = true) {
                   <small>置信度 {{ formatConfidence(message.confidence) }}</small>
                   <small v-if="message.fallbackReason">回退 {{ formatFallbackReason(message.fallbackReason) }}</small>
                 </div>
-              </template>
+                </template>
+              </div>
             </div>
           </article>
         </div>
@@ -597,7 +838,7 @@ function resetConversation(clearContext = true) {
 
 .ai-layout {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 340px minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
@@ -615,6 +856,13 @@ function resetConversation(clearContext = true) {
   background:
     radial-gradient(circle at top right, rgba(47, 125, 246, 0.08), transparent 28%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 252, 255, 0.98));
+}
+
+.ai-panel--history {
+  padding-bottom: 16px;
+  background:
+    radial-gradient(circle at top left, rgba(255, 80, 0, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 249, 246, 0.98));
 }
 
 .ai-panel-head {
@@ -641,6 +889,208 @@ function resetConversation(clearContext = true) {
   background: rgba(255, 80, 0, 0.08);
   color: var(--brand-deep);
   font-size: 18px;
+}
+
+.ai-history-summary {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 80, 0, 0.08);
+  display: grid;
+  gap: 4px;
+}
+
+.ai-history-summary span {
+  font-weight: 700;
+}
+
+.ai-history-summary small {
+  color: var(--muted);
+}
+
+.ai-history-list {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+  max-height: 472px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.ai-history-group {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-history-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 2px 0;
+}
+
+.ai-history-group-head span {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ai-history-group-head small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ai-history-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.ai-history-item.is-active .ai-history-main {
+  border-color: rgba(255, 80, 0, 0.26);
+  background: linear-gradient(180deg, #fffaf7, #ffffff);
+  box-shadow: 0 12px 24px rgba(255, 80, 0, 0.08);
+}
+
+.ai-history-main {
+  width: 100%;
+  padding: 14px 15px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fff, #fcfcfd);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.ai-history-main:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 80, 0, 0.18);
+  box-shadow: 0 12px 24px rgba(17, 24, 39, 0.06);
+}
+
+.ai-history-topline,
+.ai-history-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ai-history-type {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #fff1eb;
+  color: var(--brand-deep);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-history-topline small,
+.ai-history-meta span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ai-history-main strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.ai-history-main p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ai-history-meta {
+  margin-top: 12px;
+}
+
+.ai-history-delete {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.ai-history-delete:hover:not(:disabled) {
+  color: var(--brand-deep);
+  border-color: rgba(255, 80, 0, 0.18);
+  background: #fff4ed;
+}
+
+.ai-history-delete:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.ai-history-empty {
+  margin-top: 14px;
+  padding: 24px 16px 18px;
+  border: 1px dashed rgba(17, 24, 39, 0.12);
+  border-radius: 20px;
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 10px;
+}
+
+.ai-history-empty-mark {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #fff1eb;
+  color: var(--brand-deep);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ai-history-empty h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.ai-history-empty p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.ai-history-skeleton {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.ai-history-skeleton-item {
+  height: 94px;
+  border-radius: 18px;
+  background:
+    linear-gradient(90deg, rgba(244, 246, 248, 0.9), rgba(255, 255, 255, 0.96), rgba(244, 246, 248, 0.9));
+  background-size: 240% 100%;
+  animation: ai-history-shimmer 1.4s ease infinite;
 }
 
 .ai-capability-list {
@@ -839,8 +1289,36 @@ function resetConversation(clearContext = true) {
   justify-content: flex-start;
 }
 
+.ai-message-shell {
+  max-width: min(80%, 760px);
+  display: grid;
+  gap: 8px;
+}
+
+.ai-message.is-user .ai-message-label {
+  justify-items: end;
+}
+
+.ai-message.is-assistant .ai-message-label {
+  justify-items: start;
+}
+
+.ai-message-label {
+  display: grid;
+  gap: 2px;
+}
+
+.ai-message-label span {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.ai-message-label small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .ai-message-bubble {
-  max-width: min(78%, 760px);
   padding: 16px 18px;
   border-radius: 22px;
   box-shadow: 0 10px 24px rgba(17, 24, 39, 0.05);
@@ -862,6 +1340,12 @@ function resetConversation(clearContext = true) {
   margin: 0;
   white-space: pre-wrap;
   line-height: 1.8;
+}
+
+.ai-message-extra {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
 }
 
 .ai-message-sources {
@@ -908,6 +1392,15 @@ function resetConversation(clearContext = true) {
   box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.08);
 }
 
+@keyframes ai-history-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
 @media (max-width: 1100px) {
   .ai-hero,
   .ai-layout {
@@ -916,6 +1409,25 @@ function resetConversation(clearContext = true) {
 
   .ai-chat-shell {
     min-height: 680px;
+  }
+
+  .ai-history-list {
+    max-height: 360px;
+  }
+}
+
+@media (max-width: 720px) {
+  .ai-message-shell {
+    max-width: 100%;
+  }
+
+  .ai-history-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ai-history-delete {
+    width: 100%;
+    height: 38px;
   }
 }
 </style>
